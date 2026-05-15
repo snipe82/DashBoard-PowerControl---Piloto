@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  /* Aquí definimos nuestros colores institucionales para la v4 */
+  --color-power-purple: #9333EA;
+  --color-power-blue: #1E3A8A;
+  --color-bg-app: #F3F4F6;
+  --color-status-open: #3B82F6;
+  --color-status-review: #F59E0B;
+  --color-status-fraud: #EF4444;
+  --color-status-discarded: #10B981;
+}
