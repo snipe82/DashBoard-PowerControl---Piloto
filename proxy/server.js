@@ -28,6 +28,20 @@ app.get('/api/alerts', async (req, res) => {
     }
 });
 
+// BUSQUEDA ESPECÍFICA POR DNI (CONECTADO AL NUEVO ENDPOINT DEL MOTOR)
+app.get('/api/alerts/dni/:dni', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/dni/${req.params.dni}`, {
+            headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' }
+        });
+        if (!response.ok) throw new Error("Status " + response.status);
+        res.json(await response.json());
+    } catch (error) {
+        console.error(`Error buscando DNI ${req.params.dni}:`, error);
+        res.status(503).json({ error: 'Motor no disponible o DNI no encontrado' });
+    }
+});
+
 // DETALLE DE ALERTA
 app.get('/api/alerts/:id', async (req, res) => {
     try {

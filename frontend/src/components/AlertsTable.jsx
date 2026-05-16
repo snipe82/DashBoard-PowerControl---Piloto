@@ -14,16 +14,20 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
   }, [vistaActual, filtros]);
 
   // El radar principal
-  // REEMPLAZA SOLO ESTE BLOQUE EN AlertsTable.jsx
   useEffect(() => {
-    // Encendemos el estado de carga SOLO la primera vez o cuando cambia de página/filtro
     setCargando(true);
-    
+
     const cargarDatos = () => {
-      let url = `/api/alerts?status=${vistaActual}&page=${paginaActual}&pageSize=20`;
-      
-      if (filtros?.fechaInicio) url += `&dateFrom=${filtros.fechaInicio}`;
-      if (filtros?.fechaFin) url += `&dateTo=${filtros.fechaFin}`;
+      // 🚀 TRUCO: Si el usuario escribe una búsqueda, usamos el nuevo servicio por DNI
+      let url = filtros?.busqueda
+        ? `/api/alerts/dni/${filtros.busqueda.trim()}`
+        : `/api/alerts?status=${vistaActual}&page=${paginaActual}&pageSize=20`;
+
+      // Solo agregamos fechas si no es una búsqueda directa por DNI
+      if (!filtros?.busqueda) {
+        if (filtros?.fechaInicio) url += `&dateFrom=${filtros.fechaInicio}`;
+        if (filtros?.fechaFin) url += `&dateTo=${filtros.fechaFin}`;
+      }
 
       fetch(url)
         .then(res => {
@@ -31,22 +35,16 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
           return res.json();
         })
         .then(data => {
-          let resultados = data.data || [];
+          // El nuevo servicio de DNI puede devolver un array directo o un objeto con .data
+          const resultadoFinal = Array.isArray(data) ? data : (data.data || []);
+          setAlertas(resultadoFinal);
 
-          if (filtros?.busqueda) {
-            const textoBuscado = filtros.busqueda.toLowerCase();
-            resultados = resultados.filter(alerta => 
-              alerta.dni?.includes(textoBuscado) || 
-              alerta.cliente?.toLowerCase().includes(textoBuscado)
-            );
+          // Si estamos buscando por DNI no tiene sentido paginar (trae todo lo de ese cliente)
+          if (!filtros?.busqueda && data.pagination) {
+            setPaginacionInfo(data.pagination);
+          } else {
+            setPaginacionInfo(null); // Oculta los botones de Siguiente/Atrás al buscar
           }
-
-          setAlertas(resultados);
-          
-          if (data.pagination) setPaginacionInfo(data.pagination);
-          else setPaginacionInfo(null);
-
-          // Al terminar, quitamos el cartel de carga
           setCargando(false);
         })
         .catch(error => {
@@ -61,7 +59,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
     cargarDatos();
 
     // 2. 🚀 EL TRUCO: Refresco automático cada 30 segundos en segundo plano
-    // (Al no poner setCargando(true) aquí adentro, la tabla no parpadeará)
     const intervalo = setInterval(cargarDatos, 30000);
 
     // 3. Desactivar cuando se vaya de la página
@@ -71,7 +68,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
   return (
     <div className="p-8 animate-fade-in h-full flex flex-col">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
-        
+
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-gray-50/90 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-400 sticky top-0 backdrop-blur-sm z-10">
@@ -84,7 +81,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
                 <th className="px-6 py-4 font-bold text-right">Acción</th>
               </tr>
             </thead>
-            
+
             <tbody className="text-sm divide-y divide-gray-50">
               {cargando ? (
                 <tr>
@@ -121,7 +118,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
                       S/ {alerta.monto}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button 
+                      <button
                         className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity"
                         onClick={() => onAbrirRevision(alerta.alert_id)}
                       >
@@ -134,30 +131,39 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros }) => {
             </tbody>
           </table>
         </div>
-        
-        {/* 🚀 NUEVO: Barra inferior de Paginación */}
-        {!cargando && paginacionInfo && paginacionInfo.totalPages > 1 && (
+
+        {/* 🚀 NUEVO: Barra inferior siempre visible */}
+        {!cargando && (
           <div className="bg-gray-50 border-t border-gray-100 p-4 flex items-center justify-between shrink-0">
-            <p className="text-xs text-gray-500">
-              Mostrando página <span className="font-bold text-gray-800">{paginacionInfo.currentPage}</span> de <span className="font-bold text-gray-800">{paginacionInfo.totalPages}</span>
-              <span className="ml-2 text-gray-400">({paginacionInfo.totalItems} registros totales)</span>
-            </p>
-            <div className="flex space-x-2">
-              <button 
-                onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
-                disabled={paginacionInfo.currentPage === 1}
-                className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                Anterior
-              </button>
-              <button 
-                onClick={() => setPaginaActual(p => p + 1)}
-                disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages}
-                className="px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg hover:bg-power-blue hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                Siguiente
-              </button>
-            </div>
+            {paginacionInfo ? (
+              <>
+                <p className="text-xs text-gray-500">
+                  Mostrando página <span className="font-bold text-gray-800">{paginacionInfo.currentPage}</span> de <span className="font-bold text-gray-800">{paginacionInfo.totalPages}</span>
+                  <span className="ml-2 text-gray-400">({paginacionInfo.totalItems} registros totales)</span>
+                </p>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+                    disabled={paginacionInfo.currentPage === 1}
+                    className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    onClick={() => setPaginaActual(p => p + 1)}
+                    disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages}
+                    className="px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg hover:bg-power-blue hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </>
+            ) : (
+              // Se muestra si estás buscando un DNI específico o no hay paginación del backend
+              <p className="text-xs text-gray-500">
+                Mostrando <span className="font-bold text-gray-800">{alertas.length}</span> {alertas.length === 1 ? 'registro' : 'registros'} en total
+              </p>
+            )}
           </div>
         )}
 

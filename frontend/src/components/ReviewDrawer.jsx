@@ -4,7 +4,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
   const [alerta, setAlerta] = useState(null);
   const [payload, setPayload] = useState(null);
   const [cargando, setCargando] = useState(true);
-  
+
   const [comentario, setComentario] = useState('');
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
 
@@ -15,17 +15,17 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
         fetch(`/api/alerts/${alertId}`).then(res => res.json()),
         fetch(`/api/alerts/${alertId}/payload`).then(res => res.json())
       ])
-      .then(([dataAlerta, dataPayload]) => {
-        setAlerta(dataAlerta);
-        setPayload(dataPayload);
-        setComentario(dataAlerta.review_comment || '');
-        setNuevoEstado(dataAlerta.status === 'OPEN' ? 'IN_REVIEW' : dataAlerta.status);
-        setCargando(false);
-      })
-      .catch(err => {
-        console.error("Error cargando detalle", err);
-        setCargando(false);
-      });
+        .then(([dataAlerta, dataPayload]) => {
+          setAlerta(dataAlerta);
+          setPayload(dataPayload);
+          setComentario(dataAlerta.review_comment || '');
+          setNuevoEstado(dataAlerta.status === 'OPEN' ? 'IN_REVIEW' : dataAlerta.status);
+          setCargando(false);
+        })
+        .catch(err => {
+          console.error("Error cargando detalle", err);
+          setCargando(false);
+        });
     }
   }, [isOpen, alertId]);
 
@@ -36,11 +36,11 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
 
   const guardarRevision = async () => {
     if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
-    
+
     const esCaso = (estadoActual === 'FRAUD' || estadoActual === 'SUSPICIOUS');
     const url = esCaso ? `/api/cases/${alerta.case_id}/resolve` : `/api/alerts/${alerta.alert_id}/review`;
-    
-    const body = esCaso 
+
+    const body = esCaso
       ? { case_status: nuevoEstado, reviewer_id: "analista@powerpay.pe", resolution_comment: comentario }
       : { status: nuevoEstado, reviewer_id: "analista@powerpay.pe", review_comment: comentario, priority: "HIGH" };
 
@@ -65,7 +65,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
 
   return (
     <>
-      <div 
+      <div
         className={`fixed inset-0 bg-black transition-opacity z-40 ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`}
         onClick={onClose}
       ></div>
@@ -81,7 +81,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
             <p className="text-center py-10 text-gray-400 italic">Cargando datos del cliente...</p>
           ) : alerta && (
             <div className="space-y-6">
-              
+
               {/* 1. Info del Cliente */}
               <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 grid grid-cols-2 gap-4 shadow-sm text-sm">
                 <div className="col-span-2 border-b border-gray-200 pb-2 mb-2">
@@ -110,6 +110,38 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
                 </div>
               </div>
 
+              {/* 🚀 1.5 NUEVA SECCIÓN DE DATOS DE ENTIDAD Y EVENTO */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm">
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Cód. Entidad
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 inline-block min-w-[60px] text-center shadow-xs">
+                    {alerta.codigo_entidad || alerta.entity_code || '—'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Tipo Evento
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 inline-block shadow-xs">
+                    {alerta.tipo_evento || alerta.event_type || '—'}
+                  </span>
+                </div>
+
+                {/* Tipo de Entidad - MODIFICADO PARA LEER 'alerta.entidad' */}
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Tipo Entidad
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 inline-block shadow-xs">
+                    {/* 🚀 LEEMOS DIRECTAMENTE EL CAMPO 'entidad' QUE VIENE DEL BACKEND */}
+                    {alerta.entidad || alerta.tipo_entidad || alerta.entity_type || '—'}
+                  </span>
+                </div>
+              </div>
+
               {/* 2. Veredicto Anterior */}
               {alerta.reviewer_id && (
                 <div className="bg-power-purple/5 p-4 rounded-xl border border-power-purple/20">
@@ -120,7 +152,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
                 </div>
               )}
 
-              {/* 3. Payload JSON (Ahora va arriba del formulario) */}
+              {/* 3. Payload JSON */}
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Payload JSON</p>
@@ -141,8 +173,8 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold mb-1">Dictamen / Nuevo Estado</label>
-                    <select 
-                      value={esSoloLectura ? 'DISCARDED' : nuevoEstado} 
+                    <select
+                      value={esSoloLectura ? 'DISCARDED' : nuevoEstado}
                       onChange={(e) => setNuevoEstado(e.target.value)}
                       disabled={esSoloLectura}
                       className="w-full p-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-power-purple disabled:opacity-60 disabled:bg-gray-100"
@@ -166,19 +198,19 @@ const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla })
                   </div>
                   <div>
                     <label className="block text-xs font-bold mb-1">Comentario Justificativo</label>
-                    <textarea 
+                    <textarea
                       value={comentario}
                       onChange={(e) => setComentario(e.target.value)}
                       disabled={esSoloLectura}
-                      rows="3" 
-                      className="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-power-purple disabled:opacity-60 disabled:bg-gray-100" 
+                      rows="3"
+                      className="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-power-purple disabled:opacity-60 disabled:bg-gray-100"
                       placeholder="Explica el motivo de tu decisión..."
                     ></textarea>
                   </div>
-                  
+
                   {/* El botón de guardar solo aparece si NO es de solo lectura */}
                   {!esSoloLectura && (
-                    <button 
+                    <button
                       onClick={guardarRevision}
                       className="w-full bg-power-purple text-white font-bold py-2 rounded-lg hover:bg-power-purple/80 transition-all shadow-md"
                     >
