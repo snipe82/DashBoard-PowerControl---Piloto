@@ -1,223 +1,475 @@
 import React, { useState, useEffect } from 'react';
 
-const ReviewDrawer = ({ isOpen, onClose, alertId, estadoActual, recargarTabla }) => {
-  const [alerta, setAlerta] = useState(null);
-  const [payload, setPayload] = useState(null);
+// 🚀 FIX: Agregamos la traducción para ADDITIONAL_REVIEW
+const traducirEstado = (estado) => {
+  const diccionario = {
+    'OPEN': 'Abierta',
+    'IN_REVIEW': 'En revisión',
+    'ADDITIONAL_REVIEW': 'En revisión adicional',
+    'SUSPICIOUS': 'Sospechosa',
+    'FRAUD': 'Fraude Confirmado',
+    'DISCARDED': 'Descartada (Falso Positivo)'
+  };
+  return diccionario[estado?.toUpperCase()] || estado || '—';
+};
+
+const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, estadoActual, recargarTabla }) => {
+  const [info, setInfo] = useState(null);
+  const [alertas, setAlertas] = useState([]);
+  const [rawResponse, setRawResponse] = useState(null);
   const [cargando, setCargando] = useState(true);
+
+  const [selectedAlertId, setSelectedAlertId] = useState(null);
+  const [payloadData, setPayloadData] = useState(null);
+  const [cargandoPayload, setCargandoPayload] = useState(false);
 
   const [comentario, setComentario] = useState('');
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
 
   useEffect(() => {
-    if (isOpen && alertId) {
+    if (isOpen && entityId) {
       setCargando(true);
-      Promise.all([
-        fetch(`/api/alerts/${alertId}`).then(res => res.json()),
-        fetch(`/api/alerts/${alertId}/payload`).then(res => res.json())
-      ])
-        .then(([dataAlerta, dataPayload]) => {
-          setAlerta(dataAlerta);
-          setPayload(dataPayload);
-          setComentario(dataAlerta.review_comment || '');
-          setNuevoEstado(dataAlerta.status === 'OPEN' ? 'IN_REVIEW' : dataAlerta.status);
+      setRawResponse(null);
+      setInfo(null);
+      setAlertas([]);
+      setSelectedAlertId(null);
+      setPayloadData(null);
+
+      fetch(`/api/alerts/entity/${entityId}?status=${estadoActual}`)
+        .then(res => {
+          if (!res.ok) throw new Error(`Error en el servidor: Código ${res.status}`);
+          return res.json();
+        })
+        .then(resJson => {
+          setRawResponse(resJson);
+
+          const rawAlerts = resJson.data || (Array.isArray(resJson) ? resJson : []);
+
+          const alertsFiltered = rawAlerts.filter(al => {
+            const s = al.status || al.estado;
+            return !s || s.toUpperCase() === estadoActual.toUpperCase();
+          });
+          const sortedAlerts = [...alertsFiltered].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+          let infoObj = null;
+
+          if (sortedAlerts.length > 0) {
+            const primero = sortedAlerts[0];
+            const ultimo = sortedAlerts[sortedAlerts.length - 1];
+            const totalMonto = sortedAlerts.reduce((acc, curr) => acc + parseFloat(curr.monto || 0), 0);
+            const esComercio = primero.entidad === 'merchant';
+
+            const primeraCompra = resJson.fecha_primera_alerta || primero.fecha_primera_alerta || ultimo.fecha;
+            const ultimaCompra = resJson.fecha_ultima_alerta || primero.fecha_ultima_alerta || primero.fecha;
+            const statusEntidad = resJson.status || resJson.estado || primero.estado || primero.status || estadoActual;
+
+            infoObj = {
+              entidad_tipo: primero.entidad || 'customer',
+              display_label: esComercio ? 'Comercio / Tienda' : 'Titular / Cliente',
+              display_name: esComercio ? (primero.tienda || 'Comercio Registrado') : (primero.cliente || primero.full_name || 'No registrado'),
+              id_label: 'Código de Entidad',
+              id_value: primero.codigo_entidad || entityId,
+              monto_total: totalMonto,
+              codigo_entidad: primero.codigo_entidad || entityId,
+              tipo_evento: primero.event_type || primero.tipo_evento || '—',
+              entidad_nombre: primero.entidad || '—',
+              fecha_primera: primeraCompra,
+              fecha_ultima: ultimaCompra,
+              status: statusEntidad
+            };
+
+            const alertaPorDefecto = sortedAlerts.find(al =>
+              (al.dni && al.dni === clienteContexto) ||
+              (al.document_number && al.document_number === clienteContexto) ||
+              (al.cliente && al.cliente === clienteContexto) ||
+              (al.full_name && al.full_name === clienteContexto)
+            ) || sortedAlerts[0];
+
+            if (alertaPorDefecto) {
+              setSelectedAlertId(alertaPorDefecto.alert_id);
+              setComentario(alertaPorDefecto.review_comment || alertaPorDefecto.comentario || alertaPorDefecto.comment || '');
+            }
+          }
+
+          setInfo(infoObj);
+          setAlertas(sortedAlerts);
+          // 🚀 Ajustamos el estado destino inicial por defecto
+          setNuevoEstado(estadoActual === 'OPEN' ? 'IN_REVIEW' : estadoActual);
           setCargando(false);
         })
         .catch(err => {
-          console.error("Error cargando detalle", err);
+          console.error("❌ Error decodificando respuesta de entidad:", err);
+          setRawResponse({ error_catch: err.message });
           setCargando(false);
         });
     }
-  }, [isOpen, alertId]);
+  }, [isOpen, entityId, clienteContexto, estadoActual]);
 
-  const copiarJSON = () => {
-    navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    alert("¡JSON Copiado!");
-  };
+  useEffect(() => {
+    if (selectedAlertId) {
+      setCargandoPayload(true);
+      fetch(`/api/alerts/${selectedAlertId}/payload`)
+        .then(res => {
+          if (!res.ok) throw new Error("No se pudo descargar el payload");
+          return res.json();
+        })
+        .then(pData => {
+          setPayloadData(pData);
+          if (pData?.review_comment || pData?.comentario || pData?.comment) {
+            setComentario(pData.review_comment || pData.comentario || pData.comment);
+          }
+          setCargandoPayload(false);
+        })
+        .catch(err => {
+          console.error("Error trayendo payload dinámico:", err);
+          setPayloadData(null);
+          setCargandoPayload(false);
+        });
+    } else {
+      setPayloadData(null);
+    }
+  }, [selectedAlertId]);
 
-  const guardarRevision = async () => {
+  const alertaActiva = alertas.find(a => a.alert_id === selectedAlertId);
+
+  const alertasDelCliente = alertaActiva
+    ? alertas.filter(a => (a.dni && a.dni === alertaActiva.dni) || (a.cliente && a.cliente === alertaActiva.cliente))
+    : alertas;
+
+  const cantidadAlertasCliente = alertasDelCliente.length;
+  const totalAlertasCargadas = alertas.length;
+
+  const telefonoNativoEnLista = alertas.find(a => a.celular || a.telefono || a.phone || a.mobile);
+  const rawTelefonoEncontrado = telefonoNativoEnLista
+    ? (telefonoNativoEnLista.celular || telefonoNativoEnLista.telefono || telefonoNativoEnLista.phone || telefonoNativoEnLista.mobile)
+    : '';
+
+  const guardarRevisionMasiva = async () => {
     if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
 
-    const esCaso = (estadoActual === 'FRAUD' || estadoActual === 'SUSPICIOUS');
-    const url = esCaso ? `/api/cases/${alerta.case_id}/resolve` : `/api/alerts/${alerta.alert_id}/review`;
+    const clienteIdReal = alertaActiva?.dni || alertaActiva?.document_number || alertaActiva?.codigo_entidad || entityId;
 
-    const body = esCaso
-      ? { case_status: nuevoEstado, reviewer_id: "analista@powerpay.pe", resolution_comment: comentario }
-      : { status: nuevoEstado, reviewer_id: "analista@powerpay.pe", review_comment: comentario, priority: "HIGH" };
+    const body = {
+      status: nuevoEstado,
+      reviewer_id: "analista@powerpay.pe",
+      review_comment: comentario,
+      entity_parent_id: entityId,
+      target_dni: alertaActiva?.dni || null,
+      target_cliente: alertaActiva?.cliente || null
+    };
 
     try {
-      const res = await fetch(url, {
+      const res = await fetch(`/api/alerts/entity/${clienteIdReal}/review`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
+
       if (res.ok) {
-        alert("✅ Gestión guardada con éxito.");
         onClose();
-        recargarTabla();
+        setTimeout(() => {
+          recargarTabla();
+        }, 800);
+      } else {
+        alert("Hubo un problema al procesar la solicitud en el servidor.");
       }
     } catch (e) {
-      alert("Error al guardar la revisión.");
+      alert("Error de red al intentar guardar la revisión.");
     }
   };
 
-  const celular = payload?.telephonenumber || payload?.phone || payload?.customer?.phone || payload?.mobile || "No registrado";
   const esSoloLectura = estadoActual === 'DISCARDED';
 
   return (
     <>
-      <div
-        className={`fixed inset-0 bg-black transition-opacity z-40 ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`}
-        onClick={onClose}
-      ></div>
+      <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`} onClick={onClose}></div>
 
-      <div className={`fixed right-0 top-0 h-full w-1/3 bg-white shadow-2xl z-50 transform transition-transform duration-300 overflow-y-auto ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed right-0 top-0 h-full w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 overflow-y-auto ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-6">
           <div className="flex justify-between items-center border-b pb-4 mb-6">
-            <h3 className="text-xl font-bold text-power-blue">Detalle de Revisión</h3>
+            <h3 className="text-xl font-bold text-power-blue">Revisión de Entidad (Agrupada)</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 font-bold text-xl">✕</button>
           </div>
 
           {cargando ? (
-            <p className="text-center py-10 text-gray-400 italic">Cargando datos del cliente...</p>
-          ) : alerta && (
+            <p className="text-center py-10 text-gray-400 italic">Cargando expediente de la entidad...</p>
+          ) : (
             <div className="space-y-6">
 
-              {/* 1. Info del Cliente */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 grid grid-cols-2 gap-4 shadow-sm text-sm">
-                <div className="col-span-2 border-b border-gray-200 pb-2 mb-2">
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Cliente</p>
-                  <p className="text-base font-black text-gray-800">{alerta.cliente}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">DNI</p>
-                  <p className="font-bold">{alerta.dni || 'No disponible'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Celular</p>
-                  <p className="font-bold text-green-600">📱 {celular}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Monto</p>
-                  <p className="font-bold text-power-purple">S/ {alerta.monto}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Tienda</p>
-                  <p className="truncate font-bold">{alerta.tienda}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Regla</p>
-                  <p className="text-xs font-mono text-red-500 font-bold">{alerta.codigoregla} - {alerta.regla}</p>
-                </div>
-              </div>
+              {info && (
+                <>
+                  {/* Resumen Card */}
+                  <div className="bg-power-purple/5 rounded-xl p-4 border border-power-purple/20 grid grid-cols-2 gap-4 shadow-sm text-sm">
+                    <div className="col-span-2 border-b border-gray-200 pb-2 mb-2">
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
+                      <p className="text-lg font-black text-gray-800">{info.display_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">{info.id_label}</p>
+                      <div className="flex items-center space-x-2 mt-0.5">
+                        <p className="font-bold text-slate-700 font-mono text-xs bg-white px-2 py-1 rounded-md border border-slate-200/60 truncate max-w-[140px]" title={info.id_value}>
+                          {info.id_value}
+                        </p>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(info.id_value);
+                          }}
+                          className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center"
+                          title="Copiar identificador completo"
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado</p>
+                      <p className="font-bold text-red-600 text-lg mt-0.5">S/ {parseFloat(info.monto_total || 0).toFixed(2)}</p>
+                    </div>
+                  </div>
 
-              {/* 🚀 1.5 NUEVA SECCIÓN DE DATOS DE ENTIDAD Y EVENTO */}
-              <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm">
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Cód. Entidad
-                  </span>
-                  <span className="text-sm font-semibold text-slate-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 inline-block min-w-[60px] text-center shadow-xs">
-                    {alerta.codigo_entidad || alerta.entity_code || '—'}
-                  </span>
-                </div>
+                  {/* Grid de Auditoría */}
+                  <div className="grid grid-cols-4 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm text-center">
+                    <div>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">1° Compra</span>
+                      <span className="text-[11px] font-semibold text-slate-800 bg-white px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_primera ? new Date(info.fecha_primera).toLocaleString() : '—'}>
+                        {info.fecha_primera ? new Date(info.fecha_primera).toLocaleDateString() : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Última Compra</span>
+                      <span className="text-[11px] font-semibold text-slate-800 bg-white px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_ultima ? new Date(info.fecha_ultima).toLocaleString() : '—'}>
+                        {info.fecha_ultima ? new Date(info.fecha_ultima).toLocaleDateString() : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tipo Entidad</span>
+                      <span className="text-[11px] font-semibold text-slate-800 bg-white px-2 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate uppercase">
+                        {info.entidad_nombre}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</span>
+                      <span className={`text-[10px] font-bold uppercase px-2 py-1.5 rounded-lg border block shadow-xs truncate ${info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border-red-200' :
+                          info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                            info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                              info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border-purple-200' :
+                                'bg-blue-50 text-blue-600 border-blue-200'
+                        }`}>
+                        {traducirEstado(info.status)}
+                      </span>
+                    </div>
+                  </div>
 
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Tipo Evento
-                  </span>
-                  <span className="text-sm font-semibold text-slate-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 inline-block shadow-xs">
-                    {alerta.tipo_evento || alerta.event_type || '—'}
-                  </span>
-                </div>
+                  {/* Historial de Eventos */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="bg-gray-200/50 p-3 border-b border-gray-200">
+                      <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Historial de Eventos ({totalAlertasCargadas})</h4>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      <table className="w-full text-left text-[11px]">
+                        <thead className="bg-gray-100 text-gray-500 sticky top-0 z-10 uppercase tracking-wider text-[9px] font-bold">
+                          <tr>
+                            <th className="p-2 text-center w-8">Sel.</th>
+                            <th className="p-2">Fecha</th>
+                            <th className="p-2">DNI</th>
+                            <th className="p-2">Cliente</th>
+                            <th className="p-2">Celular</th>
+                            <th className="p-2">Comercio</th>
+                            <th className="p-2">Regla / Evento</th>
+                            <th className="p-2 text-right">Importe</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                          {alertas.map((al, idx) => {
+                            const estaSeleccionado = selectedAlertId === al.alert_id;
 
-                {/* Tipo de Entidad - MODIFICADO PARA LEER 'alerta.entidad' */}
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Tipo Entidad
-                  </span>
-                  <span className="text-sm font-semibold text-slate-800 bg-white px-3 py-1.5 rounded-lg border border-slate-200 inline-block shadow-xs">
-                    {/* 🚀 LEEMOS DIRECTAMENTE EL CAMPO 'entidad' QUE VIENE DEL BACKEND */}
-                    {alerta.entidad || alerta.tipo_entidad || alerta.entity_type || '—'}
-                  </span>
-                </div>
-              </div>
+                            const celularDelPayload = payloadData?.telephonenumber ||
+                              payloadData?.phone ||
+                              payloadData?.customer?.phone ||
+                              payloadData?.mobile;
 
-              {/* 2. Veredicto Anterior */}
-              {alerta.reviewer_id && (
-                <div className="bg-power-purple/5 p-4 rounded-xl border border-power-purple/20">
-                  <p className="text-[10px] font-black text-power-purple uppercase tracking-widest mb-2">Veredicto Anterior</p>
-                  <p className="text-xs italic text-gray-700 bg-white p-2 rounded border mt-1 leading-relaxed shadow-sm">
-                    "{alerta.review_comment}"
-                  </p>
-                </div>
+                            const phoneFinal = al.celular || al.telefono || al.phone || al.mobile || rawTelefonoEncontrado || celularDelPayload;
+
+                            let textCelular = '—';
+                            let rawPhoneToCopy = '';
+
+                            if (phoneFinal) {
+                              textCelular = phoneFinal;
+                              rawPhoneToCopy = phoneFinal;
+                            } else if (estaSeleccionado && cargandoPayload) {
+                              textCelular = '⏳...';
+                            } else {
+                              textCelular = 'No reg.';
+                            }
+
+                            const nombreComercio = al.tienda || al.comercio || al.merchant || al.merchant_name || '—';
+
+                            return (
+                              <tr
+                                key={al.alert_id || `alerta-hija-${idx}`}
+                                className={`transition-colors cursor-pointer ${estaSeleccionado ? 'bg-power-purple/5 hover:bg-power-purple/10' : 'hover:bg-gray-50'}`}
+                                onClick={() => {
+                                  setSelectedAlertId(al.alert_id);
+                                  setComentario(al.review_comment || al.comentario || al.comment || '');
+                                }}
+                              >
+                                <td className="p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="radio"
+                                    name="eventSelector"
+                                    checked={estaSeleccionado}
+                                    onChange={() => {
+                                      setSelectedAlertId(al.alert_id);
+                                      setComentario(al.review_comment || al.comentario || al.comment || '');
+                                    }}
+                                    className="h-3 w-3 text-power-purple focus:ring-power-purple border-gray-300 accent-power-purple"
+                                  />
+                                </td>
+                                <td className="p-2 text-gray-500 whitespace-nowrap">
+                                  {new Date(al.fecha).toLocaleDateString()}
+                                  <br />
+                                  <span className="text-[9px] text-gray-400">{new Date(al.fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </td>
+
+                                <td className="p-2 font-mono font-bold text-gray-600 whitespace-nowrap">
+                                  <div className="flex items-center space-x-1.5">
+                                    <span>{al.dni || '—'}</span>
+                                    {al.dni && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(al.dni);
+                                        }}
+                                        className="p-0.5 bg-slate-50 hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 text-[10px] flex items-center justify-center shadow-xs"
+                                        title="Copiar DNI"
+                                      >
+                                        📋
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td className="p-2 font-medium text-gray-700 truncate max-w-[180px]" title={al.cliente}>
+                                  {al.cliente}
+                                </td>
+
+                                <td className="p-2 font-semibold text-gray-700 whitespace-nowrap">
+                                  <div className="flex items-center space-x-1.5">
+                                    <span>{textCelular}</span>
+                                    {rawPhoneToCopy && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(rawPhoneToCopy);
+                                        }}
+                                        className="p-0.5 bg-slate-50 hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 text-[10px] flex items-center justify-center shadow-xs"
+                                        title="Copiar número celular"
+                                      >
+                                        📋
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td className="p-2 font-medium text-gray-600 truncate max-w-[150px]" title={nombreComercio}>
+                                  {nombreComercio}
+                                </td>
+
+                                <td className="p-2">
+                                  <span className="font-mono text-[9px] text-red-500 bg-red-50 px-1 py-0.5 rounded border border-red-100 font-bold block w-fit mb-0.5" title={al.regla}>
+                                    {al.codigoregla}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 block truncate max-w-[100px]" title={al.event_type}>
+                                    {al.event_type}
+                                  </span>
+                                </td>
+                                <td className="p-2 font-black text-right text-gray-800 whitespace-nowrap">
+                                  S/ {parseFloat(al.monto || 0).toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Visor de JSON */}
+                  <div className="bg-slate-900 rounded-xl p-4 shadow-inner border border-slate-800">
+                    <div className="flex justify-between items-center mb-2">
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        Payload JSON (Evento Seleccionado)
+                      </p>
+                      {payloadData && !cargandoPayload && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(JSON.stringify(payloadData, null, 2));
+                          }}
+                          className="text-[9px] font-black text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                        >
+                          Copiar JSON
+                        </button>
+                      )}
+                    </div>
+                    <pre className="text-emerald-400 text-[10px] overflow-x-auto max-h-40 font-mono scrollbar-thin">
+                      {cargandoPayload ? (
+                        <span className="italic text-slate-500 animate-pulse">⏳ Descargando metadatos del evento...</span>
+                      ) : payloadData ? (
+                        JSON.stringify(payloadData, null, 2)
+                      ) : (
+                        <span className="italic text-slate-500">No hay información de payload mapeada para esta alerta.</span>
+                      )}
+                    </pre>
+                  </div>
+
+                  {/* Formulario Dictamen */}
+                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Global en Lote</h4>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
+                        <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple">
+
+                          {/* 🚀 REGLA DE NEGOCIO: Mostrar opciones según el estado actual de la bandeja */}
+                          {estadoActual === 'OPEN' && (
+                            <option value="IN_REVIEW">Pasar a En Revisión</option>
+                          )}
+
+                          {estadoActual === 'IN_REVIEW' && (
+                            <>
+                              <option value="IN_REVIEW">Mantener En Revisión</option>
+                              {/* El estado adicional SOLO se renderiza si venimos de IN_REVIEW */}
+                              <option value="ADDITIONAL_REVIEW">En revisión adicional</option>
+                            </>
+                          )}
+
+                          {estadoActual === 'ADDITIONAL_REVIEW' && (
+                            <option value="ADDITIONAL_REVIEW">Mantener En revisión adicional</option>
+                          )}
+
+                          <option value="DISCARDED">Descartar Todas (Falso Positivo)</option>
+                          <option value="SUSPICIOUS">Sospechoso (Monitorear)</option>
+                          <option value="FRAUD">Fraude Confirmado (Bloquear)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Comentario de Evento Seleccionado</label>
+                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple" placeholder="Explica el motivo de tu decisión..."></textarea>
+                      </div>
+                      {!esSoloLectura && (
+                        <button onClick={guardarRevisionMasiva} className="w-full bg-power-purple text-white font-bold py-2 rounded-lg shadow-md hover:bg-power-purple/80 transition-all">
+                          Guardar y Resolver {cantidadAlertasCliente} Alertas de Cliente Seleccionado
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
 
-              {/* 3. Payload JSON */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Payload JSON</p>
-                  <button onClick={copiarJSON} className="text-[10px] font-black text-power-purple flex items-center bg-power-purple/10 px-2 py-1 rounded border border-power-purple/20 hover:bg-power-purple/20 transition-colors">
-                    Copiar
-                  </button>
-                </div>
-                <pre className="bg-slate-900 text-emerald-400 p-4 rounded-xl text-[10px] overflow-x-auto max-h-48 font-mono shadow-inner">
-                  {JSON.stringify(payload, null, 2)}
-                </pre>
-              </div>
-
-              {/* 4. Formulario de Acción / Lectura */}
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">
-                  {esSoloLectura ? 'ALERTA FINALIZADA (LECTURA)' : 'Acción de Analista'}
-                </h4>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Dictamen / Nuevo Estado</label>
-                    <select
-                      value={esSoloLectura ? 'DISCARDED' : nuevoEstado}
-                      onChange={(e) => setNuevoEstado(e.target.value)}
-                      disabled={esSoloLectura}
-                      className="w-full p-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-power-purple disabled:opacity-60 disabled:bg-gray-100"
-                    >
-                      {esSoloLectura ? (
-                        <option value="DISCARDED">Ya Descartada</option>
-                      ) : estadoActual === 'FRAUD' || estadoActual === 'SUSPICIOUS' ? (
-                        <>
-                          <option value="CLOSED_CONFIRMED_FRAUD">Confirmar Fraude</option>
-                          <option value="CLOSED_FALSE_POSITIVE">Falso Positivo</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="IN_REVIEW">En Revisión</option>
-                          <option value="DISCARDED">Descartar</option>
-                          <option value="SUSPICIOUS">Sospechoso</option>
-                          <option value="FRAUD">Fraude</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Comentario Justificativo</label>
-                    <textarea
-                      value={comentario}
-                      onChange={(e) => setComentario(e.target.value)}
-                      disabled={esSoloLectura}
-                      rows="3"
-                      className="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-power-purple disabled:opacity-60 disabled:bg-gray-100"
-                      placeholder="Explica el motivo de tu decisión..."
-                    ></textarea>
-                  </div>
-
-                  {/* El botón de guardar solo aparece si NO es de solo lectura */}
-                  {!esSoloLectura && (
-                    <button
-                      onClick={guardarRevision}
-                      className="w-full bg-power-purple text-white font-bold py-2 rounded-lg hover:bg-power-purple/80 transition-all shadow-md"
-                    >
-                      Guardar y Procesar
-                    </button>
-                  )}
-                </div>
+              <div className="pt-2 text-center">
+                <span className="text-[9px] font-mono text-slate-300 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  Sincronización de Eventos: {alertas.length} registros renderizados
+                </span>
               </div>
 
             </div>

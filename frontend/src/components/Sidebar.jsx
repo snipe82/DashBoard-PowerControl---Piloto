@@ -3,8 +3,12 @@ import React from 'react';
 const Sidebar = ({ vistaActual, setVistaActual }) => {
   const menuItems = [
     { id: 'DASHBOARD', titulo: 'Panel de Resumen', icono: <path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" strokeWidth="2" /> },
-    { id: 'OPEN', titulo: 'Triage (Nuevas)', icono: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /> },
+    { id: 'OPEN', titulo: 'Triage de Alertas', icono: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /> },
     { id: 'IN_REVIEW', titulo: 'En Revisión', icono: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /> },
+
+    // 🚀 NUEVA BANDEJA: Casos derivados a investigación profunda (ADDITIONAL_REVIEW)
+    { id: 'ADDITIONAL_REVIEW', titulo: 'Revisión Adicional', icono: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /> },
+
     { id: 'FRAUD', titulo: 'Casos Críticos', icono: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /> },
     { id: 'DISCARDED', titulo: 'Historial', icono: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /> }
   ];
@@ -27,12 +31,10 @@ const Sidebar = ({ vistaActual, setVistaActual }) => {
               <button
                 key={item.id}
                 onClick={() => setVistaActual(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-lg font-medium transition-colors ${
-                  isActive
-                    // AQUÍ ESTÁ LA MAGIA: bg-power-purple/10 en lugar del opacity viejo
-                    ? 'bg-power-purple/10 text-power-purple font-semibold border-l-4 border-power-purple'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-lg font-medium transition-colors ${isActive
+                  ? 'bg-power-purple/10 text-power-purple font-semibold border-l-4 border-power-purple'
+                  : 'text-gray-600 hover:bg-gray-50'
+                  }`}
               >
                 <div className="flex items-center">
                   <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

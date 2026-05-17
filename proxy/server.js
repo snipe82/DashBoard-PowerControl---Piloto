@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const fs = require('fs'); // 🚀 Agregado para validar la existencia del HTML
+const fs = require('fs'); // 🚀 Validar la existencia del HTML
 const app = express();
 const PORT = 4521;
 
@@ -11,7 +11,7 @@ app.use(express.json());
 // 1. RUTAS DE LA API (DEBEN IR PRIMERO)
 // ==========================================
 
-// PROXY DE ALERTAS
+// PROXY DE ALERTAS TRADICIONAL
 app.get('/api/alerts', async (req, res) => {
     const { status, page, pageSize, dateFrom, dateTo } = req.query;
     let backendUrl = `http://127.0.0.1:3015/api/v1/alerts?status=${status}&page=${page}&pageSize=${pageSize}`;
@@ -28,7 +28,7 @@ app.get('/api/alerts', async (req, res) => {
     }
 });
 
-// BUSQUEDA ESPECÍFICA POR DNI (CONECTADO AL NUEVO ENDPOINT DEL MOTOR)
+// BUSQUEDA ESPECÍFICA POR DNI
 app.get('/api/alerts/dni/:dni', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/dni/${req.params.dni}`, {
@@ -42,7 +42,59 @@ app.get('/api/alerts/dni/:dni', async (req, res) => {
     }
 });
 
-// DETALLE DE ALERTA
+// 🚀 ENPOINT: OBTENER LISTADO AGRUPADO POR ENTIDADES
+app.get('/api/alerts/grouped', async (req, res) => {
+    try {
+        const { status, page, pageSize, dateFrom, dateTo, search } = req.query;
+        let backendUrl = `http://127.0.0.1:3015/api/v1/alerts/grouped?status=${status}&page=${page}&pageSize=${pageSize}`;
+
+        if (dateFrom) backendUrl += `&dateFrom=${dateFrom}`;
+        if (dateTo) backendUrl += `&dateTo=${dateTo}`;
+        if (search) backendUrl += `&search=${search}`;
+
+        const response = await fetch(backendUrl, { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } });
+        if (!response.ok) throw new Error("Status " + response.status);
+        res.json(await response.json());
+    } catch (error) {
+        res.status(503).json({ error: 'Motor no disponible' });
+    }
+});
+
+// 🚀 ENDPOINT: OBTENER EL DETALLE COMPLETO DE UNA ENTIDAD POR UUID
+app.get('/api/alerts/entity/:id', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.id}`, {
+            headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' }
+        });
+        if (!response.ok) throw new Error("Status " + response.status);
+        res.json(await response.json());
+    } catch (error) {
+        console.error("Error en proxy /api/alerts/entity/:id:", error);
+        res.status(500).json({ error: "Error obteniendo entidad" });
+    }
+});
+
+// 🚀 ENDPOINT: PROXY ENVIAR REVISIÓN MASIVA POR ENTIDAD
+app.patch('/api/alerts/entity/:id/review', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.id}/review`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': 'pc-antifraude-local-key-2026'
+            },
+            body: JSON.stringify(req.body)
+        });
+
+        if (!response.ok) throw new Error("Status " + response.status);
+        res.json(await response.json());
+    } catch (error) {
+        console.error(`Error en revisión masiva para entidad ${req.params.id}:`, error);
+        res.status(500).json({ error: "Error al procesar la revisión en lote" });
+    }
+});
+
+// DETALLE ATÓMICO DE ALERTA INDIVIDUAL
 app.get('/api/alerts/:id', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}`, { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } });
@@ -50,7 +102,7 @@ app.get('/api/alerts/:id', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
-// PAYLOAD
+// PAYLOAD INDIVIDUAL
 app.get('/api/alerts/:id/payload', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/payload`, { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } });
@@ -58,7 +110,7 @@ app.get('/api/alerts/:id/payload', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
-// ENVIAR REVISIÓN
+// ENVIAR REVISIÓN INDIVIDUAL
 app.patch('/api/alerts/:id/review', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/review`, {
@@ -70,7 +122,7 @@ app.patch('/api/alerts/:id/review', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
-// RESOLVER CASO
+// RESOLVER CASO TRADICIONAL
 app.patch('/api/cases/:id/resolve', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/cases/${req.params.id}/resolve`, {
@@ -82,84 +134,89 @@ app.patch('/api/cases/:id/resolve', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
-// ESTADÍSTICAS DEL DASHBOARD (ALERTAS EN GESTIÓN ACTIVA)
+// ESTADÍSTICAS DEL DASHBOARD
 app.get('/api/stats/summary', async (req, res) => {
     try {
-        // Peticiones para las tarjetas superiores
-        const resOpen = await fetch('http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=100', { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } });
-        const dataOpen = await resOpen.json();
+        const headers = { 'X-API-Key': 'pc-antifraude-local-key-2026' };
 
-        const resFraud = await fetch('http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=1', { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } });
-        const dataFraud = await resFraud.json();
-
-        // Peticiones en paralelo para armar la gráfica de "Gestión Activa"
-        const [resO, resR, resF] = await Promise.all([
-            fetch('http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=100', { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } }),
-            fetch('http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=100', { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } }),
-            fetch('http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=100', { headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' } })
+        // 🚀 FIX: Agregamos la petición concurrente para el estado ADDITIONAL_REVIEW
+        const [resO, resR, resF, resS, resD, resAR] = await Promise.all([
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=100', { headers }),
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=100', { headers }),
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=100', { headers }),
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=SUSPICIOUS&pageSize=100', { headers }),
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=DISCARDED&pageSize=100', { headers }),
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=100', { headers }) // 🚀 NUEVO
         ]);
 
-        const [dataO, dataR, dataF] = await Promise.all([resO.json(), resR.json(), resF.json()]);
+        const [dataO, dataR, dataF, dataS, dataD, dataAR] = await Promise.all([
+            resO.json(), resR.json(), resF.json(), resS.json(), resD.json(), resAR.json()
+        ]);
 
-        // Unimos los datos para contar las reglas activas
-        const alertasActivas = [
-            ...(dataO.data || []),
-            ...(dataR.data || []),
-            ...(dataF.data || [])
-        ];
+        const abiertas = dataO.data || [];
+        const enRevision = dataR.data || [];
+        const fraudes = dataF.data || [];
+        const sospechosos = dataS.data || [];
+        const descartadas = dataD.data || [];
+        const enRevisionAdicional = dataAR.data || []; // 🚀 NUEVO
 
-        const dineroRiesgo = dataOpen.data ? dataOpen.data.reduce((acc, curr) => acc + parseFloat(curr.monto || 0), 0) : 0;
-        const totalAlertas = dataOpen.pagination ? dataOpen.pagination.totalItems : 0;
-        const casosCriticos = dataFraud.pagination ? dataFraud.pagination.totalItems : 0;
+        // 🚀 FIX UNIVERSOS: Incorporamos ADDITIONAL_REVIEW en Gestión Activa e Histórico
+        const activas = [...abiertas, ...enRevision, ...enRevisionAdicional];
+        const riesgoCritico = [...sospechosos, ...fraudes];
+        const globales = [...abiertas, ...enRevision, ...enRevisionAdicional, ...fraudes, ...sospechosos, ...descartadas];
 
-        const conteoReglas = {};
-        let totalReglas = 0;
+        // KPIs Superiores
+        const dineroRiesgo = activas.reduce((acc, curr) => acc + parseFloat(curr.monto || 0), 0);
+        const totalAlertas = dataO.pagination ? dataO.pagination.totalItems : abiertas.length;
+        const casosCriticos = dataF.pagination ? dataF.pagination.totalItems : fraudes.length;
 
-        alertasActivas.forEach(alerta => {
-            if (alerta.codigoregla) {
-                const nombreRegla = `${alerta.codigoregla} - ${alerta.regla || 'Desconocida'}`;
-                conteoReglas[nombreRegla] = (conteoReglas[nombreRegla] || 0) + 1;
-                totalReglas++;
-            }
-        });
+        const procesarTop5 = (arreglo) => {
+            const conteo = {};
+            let total = 0;
+            arreglo.forEach(al => {
+                if (al.codigoregla) {
+                    const nombre = `${al.codigoregla} - ${al.regla || 'Desconocida'}`;
+                    conteo[nombre] = (conteo[nombre] || 0) + 1;
+                    total++;
+                }
+            });
+            return Object.entries(conteo)
+                .map(([nombre, quantity]) => ({
+                    nombre,
+                    quantity,
+                    porcentaje: total > 0 ? Math.round((quantity / total) * 100) : 0
+                }))
+                .sort((a, b) => b.quantity - a.quantity)
+                .slice(0, 5);
+        };
 
-        const topRules = Object.entries(conteoReglas)
-            .map(([nombre, quantity]) => ({
-                nombre: nombre,
-                porcentaje: totalReglas > 0 ? Math.round((quantity / totalReglas) * 100) : 0
-            }))
-            .sort((a, b) => b.porcentaje - a.porcentaje)
-            .slice(0, 5);
-
-        // Devolvemos el JSON limpio y esperado por React
         res.json({
             alertas_abiertas: totalAlertas,
             dinero_en_riesgo: dineroRiesgo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            efectividad: totalAlertas > 0 ? (100 - (casosCriticos / totalAlertas * 100)).toFixed(1) + "%" : "100%",
+            efectividad: totalAlertas > 0 ? (100 - (casosCriticos / (totalAlertas + casosCriticos) * 100)).toFixed(1) + "%" : "100%",
             casos_criticos: casosCriticos,
-            top_rules: topRules
+            top_rules_activas: procesarTop5(activas),
+            top_rules_riesgo: procesarTop5(riesgoCritico),
+            top_rules_globales: procesarTop5(globales)
         });
     } catch (e) {
         console.error("Error en /api/stats/summary:", e);
-        res.status(500).json({ error: 'No se pudo conectar con el motor' });
+        res.status(500).json({ error: 'Error en el proxy' });
     }
 });
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'views', 'index.html')));
 
 // ==========================================
 // 2. FALLBACK DE RUTAS (SIEMPRE AL FINAL)
 // ==========================================
 app.use((req, res) => {
     const reactAppPath = path.join(__dirname, 'public', 'index.html');
-
-    // Si el HTML compilado ya existe, se envía (Producción)
     if (fs.existsSync(reactAppPath)) {
         res.sendFile(reactAppPath);
     } else {
-        // Si no existe (Desarrollo), responde con texto plano amigable
         res.send("🚀 Proxy de PowerControl activo. El Frontend aún no se ha fusionado. Para ver la app, entra al puerto de Vite (ej. http://localhost:5173)");
     }
 });
-
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'views', 'index.html')));
 
 app.listen(PORT, () => console.log(`🚀 PowerControl Backend/Proxy en puerto: ${PORT}`));
