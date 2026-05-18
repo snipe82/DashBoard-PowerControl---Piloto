@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 
-// 🚀 FIX: Agregamos la traducción para ADDITIONAL_REVIEW
 const traducirEstado = (estado) => {
   const diccionario = {
     'OPEN': 'Abierta',
@@ -27,7 +26,13 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
 
   useEffect(() => {
-    if (isOpen && entityId) {
+    if (isOpen) {
+      if (!entityId) {
+        setCargando(false);
+        setRawResponse({ error: "Identificador inválido." });
+        return;
+      }
+
       setCargando(true);
       setRawResponse(null);
       setInfo(null);
@@ -35,7 +40,15 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
       setSelectedAlertId(null);
       setPayloadData(null);
 
-      fetch(`/api/alerts/entity/${entityId}?status=${estadoActual}`)
+      const cleanEntityId = String(entityId).trim();
+      const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanEntityId);
+
+      let urlEndpoint = `/api/alerts/entity/${cleanEntityId}?status=${estadoActual}`;
+      if (!esUUID) {
+        urlEndpoint = `/api/alerts/dni/${cleanEntityId}?status=${estadoActual}`;
+      }
+
+      fetch(urlEndpoint)
         .then(res => {
           if (!res.ok) throw new Error(`Error en el servidor: Código ${res.status}`);
           return res.json();
@@ -43,12 +56,25 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
         .then(resJson => {
           setRawResponse(resJson);
 
-          const rawAlerts = resJson.data || (Array.isArray(resJson) ? resJson : []);
+          // 🚀 BLINDAJE CONTRA ERRORES FANTASMAS DEL BACKEND
+          let rawAlerts = [];
+          if (Array.isArray(resJson)) {
+            rawAlerts = resJson;
+          } else if (resJson && Array.isArray(resJson.data)) {
+            rawAlerts = resJson.data;
+          } else if (resJson && typeof resJson === 'object') {
+            const obj = resJson.data || resJson;
+            // Solo creamos el array si realmente parece una alerta válida (con fecha, dni, alert_id, etc.)
+            if (obj && (obj.alert_id || obj.fecha || obj.monto || obj.dni || obj.cliente)) {
+              rawAlerts = [obj];
+            }
+          }
 
           const alertsFiltered = rawAlerts.filter(al => {
             const s = al.status || al.estado;
-            return !s || s.toUpperCase() === estadoActual.toUpperCase();
+            return !s || String(s).toUpperCase() === String(estadoActual).toUpperCase();
           });
+
           const sortedAlerts = [...alertsFiltered].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
           let infoObj = null;
@@ -56,21 +82,37 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
           if (sortedAlerts.length > 0) {
             const primero = sortedAlerts[0];
             const ultimo = sortedAlerts[sortedAlerts.length - 1];
-            const totalMonto = sortedAlerts.reduce((acc, curr) => acc + parseFloat(curr.monto || 0), 0);
-            const esComercio = primero.entidad === 'merchant';
+
+            const nombreEntidad = primero.entidad && typeof primero.entidad === 'string' ? primero.entidad.toLowerCase() : '';
+            const esComercio = nombreEntidad.includes('comercio') || nombreEntidad.includes('merch');
+
+            const txProcesadas = new Set();
+            let totalMontoReal = 0;
+
+            sortedAlerts.forEach(al => {
+              const fechaSinSegundos = al.fecha ? new Date(al.fecha).setSeconds(0, 0) : '0';
+              const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${al.monto}`;
+
+              if (!txProcesadas.has(txKey)) {
+                txProcesadas.add(txKey);
+                totalMontoReal += parseFloat(al.monto || 0);
+              }
+            });
 
             const primeraCompra = resJson.fecha_primera_alerta || primero.fecha_primera_alerta || ultimo.fecha;
             const ultimaCompra = resJson.fecha_ultima_alerta || primero.fecha_ultima_alerta || primero.fecha;
             const statusEntidad = resJson.status || resJson.estado || primero.estado || primero.status || estadoActual;
+
+            const idEntidadFinal = primero.codigo_entidad || primero.customer_id || primero.merchant_id || cleanEntityId;
 
             infoObj = {
               entidad_tipo: primero.entidad || 'customer',
               display_label: esComercio ? 'Comercio / Tienda' : 'Titular / Cliente',
               display_name: esComercio ? (primero.tienda || 'Comercio Registrado') : (primero.cliente || primero.full_name || 'No registrado'),
               id_label: 'Código de Entidad',
-              id_value: primero.codigo_entidad || entityId,
-              monto_total: totalMonto,
-              codigo_entidad: primero.codigo_entidad || entityId,
+              id_value: idEntidadFinal,
+              monto_total: totalMontoReal,
+              codigo_entidad: idEntidadFinal,
               tipo_evento: primero.event_type || primero.tipo_evento || '—',
               entidad_nombre: primero.entidad || '—',
               fecha_primera: primeraCompra,
@@ -93,7 +135,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
 
           setInfo(infoObj);
           setAlertas(sortedAlerts);
-          // 🚀 Ajustamos el estado destino inicial por defecto
           setNuevoEstado(estadoActual === 'OPEN' ? 'IN_REVIEW' : estadoActual);
           setCargando(false);
         })
@@ -144,22 +185,41 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     ? (telefonoNativoEnLista.celular || telefonoNativoEnLista.telefono || telefonoNativoEnLista.phone || telefonoNativoEnLista.mobile)
     : '';
 
+  // 🚀 LA SOLUCIÓN MAESTRA SE MANTIENE INTACTA
   const guardarRevisionMasiva = async () => {
     if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
+    if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
+    if (cargandoPayload) return alert("Por favor, espera a que cargue la información del evento seleccionado.");
+    if (!payloadData) return alert("El payload aún no ha cargado o está vacío.");
 
-    const clienteIdReal = alertaActiva?.dni || alertaActiva?.document_number || alertaActiva?.codigo_entidad || entityId;
+    let idParaRuta = payloadData.customerid || payloadData.customerId || payloadData.customer_id;
+
+    if (!idParaRuta) {
+      idParaRuta = payloadData.document_number || payloadData.dni || alertaActiva.dni || alertaActiva.document_number;
+    }
+
+    if (!idParaRuta) {
+      return alert("Error crítico: No se encontró el campo 'customerid' ni 'dni' en el Payload JSON de esta alerta.");
+    }
+
+    const cleanIdParaRuta = String(idParaRuta).trim();
+    const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanIdParaRuta);
+
+    const reviewUrl = esUUID
+      ? `/api/alerts/entity/${cleanIdParaRuta}/review`
+      : `/api/alerts/dni/${cleanIdParaRuta}/review`;
 
     const body = {
       status: nuevoEstado,
       reviewer_id: "analista@powerpay.pe",
       review_comment: comentario,
-      entity_parent_id: entityId,
-      target_dni: alertaActiva?.dni || null,
-      target_cliente: alertaActiva?.cliente || null
+      entity_parent_id: String(entityId).trim(),
+      target_dni: alertaActiva.dni || alertaActiva.document_number || null,
+      target_cliente: alertaActiva.cliente || alertaActiva.full_name || null
     };
 
     try {
-      const res = await fetch(`/api/alerts/entity/${clienteIdReal}/review`, {
+      const res = await fetch(reviewUrl, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -171,7 +231,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
           recargarTabla();
         }, 800);
       } else {
-        alert("Hubo un problema al procesar la solicitud en el servidor.");
+        alert(`Hubo un problema al procesar la solicitud en el servidor. Código: ${res.status}`);
       }
     } catch (e) {
       alert("Error de red al intentar guardar la revisión.");
@@ -196,7 +256,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
           ) : (
             <div className="space-y-6">
 
-              {info && (
+              {info ? (
                 <>
                   {/* Resumen Card */}
                   <div className="bg-power-purple/5 rounded-xl p-4 border border-power-purple/20 grid grid-cols-2 gap-4 shadow-sm text-sm">
@@ -222,7 +282,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                       </div>
                     </div>
                     <div>
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado (Transacciones)</p>
                       <p className="font-bold text-red-600 text-lg mt-0.5">S/ {parseFloat(info.monto_total || 0).toFixed(2)}</p>
                     </div>
                   </div>
@@ -430,7 +490,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                         <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
                         <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple">
 
-                          {/* 🚀 REGLA DE NEGOCIO: Mostrar opciones según el estado actual de la bandeja */}
                           {estadoActual === 'OPEN' && (
                             <option value="IN_REVIEW">Pasar a En Revisión</option>
                           )}
@@ -438,7 +497,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                           {estadoActual === 'IN_REVIEW' && (
                             <>
                               <option value="IN_REVIEW">Mantener En Revisión</option>
-                              {/* El estado adicional SOLO se renderiza si venimos de IN_REVIEW */}
                               <option value="ADDITIONAL_REVIEW">En revisión adicional</option>
                             </>
                           )}
@@ -464,6 +522,12 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                     </div>
                   </div>
                 </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 px-6 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
+                  <span className="text-4xl mb-4">📭</span>
+                  <p className="text-slate-500 font-bold text-center">No se encontraron alertas activas en estado <span className="text-power-purple">{traducirEstado(estadoActual)}</span>.</p>
+                  <p className="text-xs text-slate-400 mt-2 text-center">Esto ocurre si la búsqueda no retornó resultados o la alerta fue movida a otra bandeja.</p>
+                </div>
               )}
 
               <div className="pt-2 text-center">

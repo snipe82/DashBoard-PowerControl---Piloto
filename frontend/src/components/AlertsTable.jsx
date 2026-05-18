@@ -1,22 +1,38 @@
 import React, { useState, useEffect } from 'react';
 
-const MiniAlertTooltip = ({ entityId, idx }) => {
+const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
   const [alertas, setAlertas] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
+    if (!entityId) return;
     setCargando(true);
-    fetch(`/api/alerts/entity/${entityId}`)
+
+    const cleanId = String(entityId).trim();
+    const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanId);
+    let urlEndpoint = `/api/alerts/entity/${cleanId}?status=${vistaActual}`;
+
+    if (!esUUID) {
+      urlEndpoint = `/api/alerts/dni/${cleanId}?status=${vistaActual}`;
+    }
+
+    fetch(urlEndpoint)
       .then(res => res.json())
       .then(data => {
         const arr = data.data || (Array.isArray(data) ? data : []);
-        setAlertas(arr.slice(0, 5));
+        const alertsFiltered = arr.filter(al => {
+          const s = al.status || al.estado;
+          return !s || s.toUpperCase() === vistaActual.toUpperCase();
+        });
+        alertsFiltered.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        setAlertas(alertsFiltered.slice(0, 5));
         setCargando(false);
       })
       .catch(() => setCargando(false));
-  }, [entityId]);
+  }, [entityId, vistaActual]);
 
-  const isTooHigh = idx < 2;
+  // 🚀 FIX VISUAL: Ampliamos el umbral para que las primeras 6 filas abran hacia abajo y no choquen con el techo
+  const isTooHigh = idx < 6;
 
   return (
     <div className={`absolute z-50 left-1/2 -translate-x-1/2 w-[480px] bg-slate-900 text-white rounded-xl shadow-2xl p-5 border border-slate-700 pointer-events-none transition-opacity duration-200 animate-fade-in ${isTooHigh ? 'top-full mt-3' : 'bottom-full mb-3'
@@ -31,7 +47,7 @@ const MiniAlertTooltip = ({ entityId, idx }) => {
       {cargando ? (
         <p className="text-slate-100 italic text-center py-4 text-sm animate-pulse">Cargando detalle...</p>
       ) : alertas.length === 0 ? (
-        <p className="text-slate-100 text-center py-3 text-sm">No hay detalle disponible</p>
+        <p className="text-slate-100 text-center py-3 text-sm">No hay detalle disponible para este estado</p>
       ) : (
         <ul className="space-y-2.5">
           {alertas.map((al, i) => (
@@ -44,11 +60,9 @@ const MiniAlertTooltip = ({ entityId, idx }) => {
                   S/ {parseFloat(al.monto || 0).toFixed(2)}
                 </span>
               </div>
-
               <p className="text-sm text-slate-50 font-medium mb-1.5 whitespace-normal" title={al.regla}>
                 {al.regla || 'Alerta de riesgo'}
               </p>
-
               <div className="flex justify-between items-center text-xs text-slate-200">
                 <span>{al.event_type || 'Transacción'}</span>
                 <span>{new Date(al.fecha).toLocaleString()}</span>
@@ -73,8 +87,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   const [paginaActual, setPaginaActual] = useState(1);
   const [paginacionInfo, setPaginacionInfo] = useState(null);
   const [hoveredEntityId, setHoveredEntityId] = useState(null);
-
-  // 🚀 Variable local temporal para el valor que escribe el analista en el input de salto de página
   const [inputPagina, setInputPagina] = useState("1");
 
   const pageSize = 20;
@@ -105,13 +117,9 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
         })
         .then(data => {
           let arrData = [];
-          if (Array.isArray(data)) {
-            arrData = data;
-          } else if (data && Array.isArray(data.data)) {
-            arrData = data.data;
-          } else if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-            arrData = [data.data || data];
-          }
+          if (Array.isArray(data)) arrData = data;
+          else if (data && Array.isArray(data.data)) arrData = data.data;
+          else if (data && typeof data === 'object' && Object.keys(data).length > 0) arrData = [data.data || data];
 
           arrData = arrData.filter(item => {
             const s = item.status || item.estado;
@@ -121,10 +129,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           arrData.sort((a, b) => {
             const fechaA = a.fecha_ultima_compra || a.fecha_ultima_alerta || a.ultima_fecha || a.max_fecha || a.fecha || 0;
             const fechaB = b.fecha_ultima_compra || b.fecha_ultima_alerta || b.ultima_fecha || b.max_fecha || b.fecha || 0;
-
-            const dateA = new Date(fechaA);
-            const dateB = new Date(fechaB);
-            return dateB - dateA;
+            return new Date(fechaB) - new Date(fechaA);
           });
 
           let infoPaginacion = null;
@@ -151,7 +156,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
 
           setEntidades(arrData);
           setPaginacionInfo(infoPaginacion);
-          // Sincronizamos el input del frontend con la página real devuelta
           setInputPagina(paginaActual.toString());
           setCargando(false);
         })
@@ -168,11 +172,9 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
     return () => intervalo && clearInterval(intervalo);
   }, [vistaActual, filtros, paginaActual, refreshTrigger]);
 
-  // 🚀 FUNCIÓN DE SALTO DE PÁGINA INTELIGENTE
   const procesarSaltoPagina = () => {
     const num = parseInt(inputPagina, 10);
     if (!isNaN(num) && paginacionInfo) {
-      // Validamos que esté en el rango de páginas válidas
       const paginaDestino = Math.max(1, Math.min(num, paginacionInfo.totalPages));
       setPaginaActual(paginaDestino);
       setInputPagina(paginaDestino.toString());
@@ -205,8 +207,26 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                 entidades.map((entidad, idx) => {
                   const fechaRaw = entidad.fecha_ultima_compra || entidad.fecha_ultima_alerta || entidad.ultima_fecha || entidad.max_fecha || entidad.fecha;
 
+                  const busquedaDni = filtros?.busqueda?.trim() || '';
+                  const busquedaCodigo = filtros?.codigoEntidad?.trim() || '';
+
+                  let idEntidadFinal = null;
+
+                  if (busquedaDni) {
+                    idEntidadFinal = entidad.dni || entidad.document_number || busquedaDni;
+                  } else if (busquedaCodigo) {
+                    idEntidadFinal = entidad.customer_id || entidad.cliente_id || busquedaCodigo;
+                  } else {
+                    idEntidadFinal = entidad.codigo_entidad || entidad.customer_id || entidad.merchant_id || entidad.dni || entidad.document_number;
+                  }
+
+                  const isHovered = hoveredEntityId === idEntidadFinal;
+
                   return (
-                    <tr key={entidad.codigo_entidad || entidad.dni || `entidad-${idx}`} className="hover:bg-gray-50 transition-colors group">
+                    <tr
+                      key={idEntidadFinal || `entidad-${idx}`}
+                      className={`hover:bg-gray-50 transition-colors group ${isHovered ? 'relative z-50' : 'relative z-0'}`}
+                    >
                       <td className="px-6 py-4 text-gray-500">
                         {fechaRaw ? new Date(fechaRaw).toLocaleString() : '—'}
                       </td>
@@ -219,17 +239,17 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                         </span>
                       </td>
 
-                      <td className="px-6 py-4 text-center relative">
+                      <td className={`px-6 py-4 text-center relative ${isHovered ? 'z-50' : 'z-0'}`}>
                         <div
-                          onMouseEnter={() => setHoveredEntityId(entidad.codigo_entidad || entidad.dni)}
+                          onMouseEnter={() => setHoveredEntityId(idEntidadFinal)}
                           onMouseLeave={() => setHoveredEntityId(null)}
                           className="inline-block relative"
                         >
                           <span className="bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold border border-red-200 shadow-sm cursor-help block">
                             {entidad.total_alertas || 1} alertas
                           </span>
-                          {hoveredEntityId === (entidad.codigo_entidad || entidad.dni) && (
-                            <MiniAlertTooltip entityId={entidad.codigo_entidad || entidad.dni} idx={idx} />
+                          {isHovered && (
+                            <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} />
                           )}
                         </div>
                       </td>
@@ -240,13 +260,14 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
 
                       <td className="px-6 py-4 text-right">
                         <button
-                          className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity bg-power-purple/10 px-4 py-2 rounded-lg"
+                          className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity bg-power-purple/10 px-4 py-2 rounded-lg disabled:opacity-50"
+                          disabled={!idEntidadFinal}
                           onClick={() => onAbrirRevision(
-                            entidad.codigo_entidad || entidad.dni,
+                            idEntidadFinal,
                             entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name
                           )}
                         >
-                          Revisar Entidad
+                          {idEntidadFinal ? 'Revisar Entidad' : 'ID Inválido'}
                         </button>
                       </td>
                     </tr>
@@ -264,34 +285,17 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               <span className="ml-2 text-gray-400">({paginacionInfo.totalItems} agrupaciones encontradas)</span>
             </p>
 
-            {/* 🚀 BARRA DE PAGINACIÓN EXPANDIDA CON CONTROL DE SALTO DIRECTO */}
             <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
-                disabled={paginacionInfo.currentPage === 1}
-                className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginacionInfo.currentPage === 1} className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
                 Anterior
               </button>
 
-              {/* Selector e Input de Salto Rápido de Página */}
               <div className="flex items-center space-x-1.5 bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow-sm">
                 <span className="text-[11px] text-gray-400 uppercase tracking-tight font-medium">Ir a:</span>
-                <input
-                  type="text"
-                  value={inputPagina}
-                  onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} // Solo permite números planos
-                  onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} // Salta al presionar Enter
-                  onBlur={procesarSaltoPagina} // Salta al hacer clic fuera del input
-                  className="w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-power-purple focus:bg-white"
-                />
+                <input type="text" value={inputPagina} onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} onBlur={procesarSaltoPagina} className="w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-power-purple focus:bg-white" />
               </div>
 
-              <button
-                onClick={() => setPaginaActual(p => p + 1)}
-                disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages}
-                className="px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-power-blue/5 transition-colors"
-              >
+              <button onClick={() => setPaginaActual(p => p + 1)} disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} className="px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-power-blue/5">
                 Siguiente
               </button>
             </div>

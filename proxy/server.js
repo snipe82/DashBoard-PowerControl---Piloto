@@ -139,14 +139,14 @@ app.get('/api/stats/summary', async (req, res) => {
     try {
         const headers = { 'X-API-Key': 'pc-antifraude-local-key-2026' };
 
-        // 🚀 FIX: Agregamos la petición concurrente para el estado ADDITIONAL_REVIEW
+        // Solicitamos todos los estados concurrentemente
         const [resO, resR, resF, resS, resD, resAR] = await Promise.all([
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=100', { headers }),
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=100', { headers }),
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=100', { headers }),
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=SUSPICIOUS&pageSize=100', { headers }),
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=DISCARDED&pageSize=100', { headers }),
-            fetch('http://127.0.0.1:3015/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=100', { headers }) // 🚀 NUEVO
+            fetch('http://127.0.0.1:3015/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=100', { headers })
         ]);
 
         const [dataO, dataR, dataF, dataS, dataD, dataAR] = await Promise.all([
@@ -158,18 +158,35 @@ app.get('/api/stats/summary', async (req, res) => {
         const fraudes = dataF.data || [];
         const sospechosos = dataS.data || [];
         const descartadas = dataD.data || [];
-        const enRevisionAdicional = dataAR.data || []; // 🚀 NUEVO
+        const enRevisionAdicional = dataAR.data || [];
 
-        // 🚀 FIX UNIVERSOS: Incorporamos ADDITIONAL_REVIEW en Gestión Activa e Histórico
+        // Universos de Datos base para los gráficos de barras
         const activas = [...abiertas, ...enRevision, ...enRevisionAdicional];
         const riesgoCritico = [...sospechosos, ...fraudes];
         const globales = [...abiertas, ...enRevision, ...enRevisionAdicional, ...fraudes, ...sospechosos, ...descartadas];
 
-        // KPIs Superiores
-        const dineroRiesgo = activas.reduce((acc, curr) => acc + parseFloat(curr.monto || 0), 0);
+        // 🚀 FIX MATEMÁTICO SUPREMO: Deduplicación analítica para el "Monto en Riesgo" general del Dashboard
+        const txProcesadasDashboard = new Set();
+        let dineroRiesgoNeto = 0;
+
+        activas.forEach(al => {
+            // 1. Redondeamos el tiempo al minuto exacto para agrupar ráfagas de alertas secuenciales
+            const fechaSinSegundos = al.fecha ? new Date(al.fecha).setSeconds(0, 0) : '0';
+
+            // 2. Armamos la llave única basándonos en IDs duros o en la firma [Minuto]_[Monto]
+            const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${al.monto}`;
+
+            if (!txProcesadasDashboard.has(txKey)) {
+                txProcesadasDashboard.add(txKey);
+                dineroRiesgoNeto += parseFloat(al.monto || 0);
+            }
+        });
+
+        // Contadores generales para las tarjetas informativas
         const totalAlertas = dataO.pagination ? dataO.pagination.totalItems : abiertas.length;
         const casosCriticos = dataF.pagination ? dataF.pagination.totalItems : fraudes.length;
 
+        // Función reutilizable para calcular el Top 5 de cualquier universo (mantiene las barras intactas)
         const procesarTop5 = (arreglo) => {
             const conteo = {};
             let total = 0;
@@ -192,7 +209,8 @@ app.get('/api/stats/summary', async (req, res) => {
 
         res.json({
             alertas_abiertas: totalAlertas,
-            dinero_en_riesgo: dineroRiesgo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            // 🚀 Enviamos el monto neto deduplicado con formato financiero estadounidense estándar
+            dinero_en_riesgo: dineroRiesgoNeto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             efectividad: totalAlertas > 0 ? (100 - (casosCriticos / (totalAlertas + casosCriticos) * 100)).toFixed(1) + "%" : "100%",
             casos_criticos: casosCriticos,
             top_rules_activas: procesarTop5(activas),
