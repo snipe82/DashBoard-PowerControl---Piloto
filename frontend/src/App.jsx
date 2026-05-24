@@ -9,9 +9,10 @@ function App() {
   const [vistaActual, setVistaActual] = useState('DASHBOARD');
   const [drawerAbierto, setDrawerAbierto] = useState(false);
   const [alertaSeleccionada, setAlertaSeleccionada] = useState(null);
-
-  // 🚀 NUEVO: Recordar qué cliente/DNI se clickeó en la fila
   const [clienteContexto, setClienteContexto] = useState(null);
+
+  // 🚀 NUEVO: Memoria para saber si el menú de celular está abierto o cerrado
+  const [menuAbierto, setMenuAbierto] = useState(false);
 
   const [filtros, setFiltros] = useState({
     fechaInicio: '',
@@ -24,9 +25,10 @@ function App() {
   const cambiarVistaYLimpiar = (nuevaVista) => {
     setVistaActual(nuevaVista);
     setFiltros({ fechaInicio: '', fechaFin: '', busqueda: '' });
+    // 🚀 NUEVO: Si estamos en celular, cerramos el menú automáticamente al elegir una opción
+    setMenuAbierto(false); 
   };
 
-  // 🚀 ACTUALIZADO: Ahora recibe el identificador del cliente de la fila
   const abrirRevision = (alertId, clientCtx) => {
     setAlertaSeleccionada(alertId);
     setClienteContexto(clientCtx);
@@ -34,12 +36,32 @@ function App() {
   };
 
   return (
-    <div className="bg-bg-app text-gray-800 font-sans antialiased h-screen flex overflow-hidden">
+    <div className="bg-bg-app text-gray-800 font-sans antialiased h-screen flex overflow-hidden relative">
 
-      <Sidebar vistaActual={vistaActual} setVistaActual={cambiarVistaYLimpiar} />
+      {/* 🚀 NUEVO: Cortina oscura (Overlay) que aparece detrás del menú en celulares */}
+      {menuAbierto && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity"
+          onClick={() => setMenuAbierto(false)}
+        />
+      )}
 
-      <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-50">
-        <Header vistaActual={vistaActual} filtros={filtros} setFiltros={setFiltros} />
+      {/* 🚀 NUEVO: Envolvemos el Sidebar. 
+          En celular (por defecto): absolute, z-50, fuera de la pantalla (-translate-x-full).
+          En PC (md:): relativo, sin animaciones de entrada, siempre visible (translate-x-0). */}
+      <div className={`fixed inset-y-0 left-0 z-50 transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out flex`}>
+        <Sidebar vistaActual={vistaActual} setVistaActual={cambiarVistaYLimpiar} />
+      </div>
+
+      <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-50 w-full">
+        
+        {/* 🚀 Le pasamos al Header la llave para abrir el menú (onToggleMenu) */}
+        <Header 
+          vistaActual={vistaActual} 
+          filtros={filtros} 
+          setFiltros={setFiltros} 
+          onToggleMenu={() => setMenuAbierto(true)} 
+        />
 
         <div className="flex-1 overflow-y-auto">
           {vistaActual === 'DASHBOARD' ? (
@@ -47,7 +69,7 @@ function App() {
           ) : (
             <AlertsTable
               vistaActual={vistaActual}
-              onAbrirRevision={abrirRevision} // Pasa la función actualizada
+              onAbrirRevision={abrirRevision}
               filtros={filtros}
               refreshTrigger={refreshTrigger}
             />
@@ -59,7 +81,7 @@ function App() {
         isOpen={drawerAbierto}
         onClose={() => setDrawerAbierto(false)}
         alertId={alertaSeleccionada}
-        clienteContexto={clienteContexto} // 🚀 Le pasamos el contexto del cliente clickeado al Drawer
+        clienteContexto={clienteContexto}
         estadoActual={vistaActual}
         recargarTabla={() => setRefreshTrigger(prev => prev + 1)}
       />

@@ -41,37 +41,40 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
   const isTooHigh = idx < 6;
 
   return (
-    <div className={`absolute z-50 left-1/2 -translate-x-1/2 w-[480px] bg-slate-900 text-white rounded-xl shadow-2xl p-5 border border-slate-700 pointer-events-none transition-opacity duration-200 animate-fade-in ${
+    // 🚀 ADAPTACIÓN MÓVIL: Le quitamos el "hidden" y lo hacemos responsive (w-[280px] a w-[480px]). 
+    // En celular se pega a la derecha (right-0), en PC se centra (md:left-1/2).
+    <div className={`absolute z-50 right-0 md:right-auto md:left-1/2 md:-translate-x-1/2 w-[280px] sm:w-[320px] md:w-[480px] bg-slate-900 text-white rounded-xl shadow-2xl p-4 md:p-5 border border-slate-700 transition-opacity duration-200 animate-fade-in ${
       isTooHigh ? 'top-full mt-3' : 'bottom-full mb-3'
     }`}>
-      <div className={`absolute left-1/2 -translate-x-1/2 border-[6px] border-transparent ${
+      {/* Flechita del globo (alineada a la derecha en celular, centrada en PC) */}
+      <div className={`absolute right-6 md:right-auto md:left-1/2 md:-translate-x-1/2 border-[6px] border-transparent ${
         isTooHigh ? 'bottom-full border-b-slate-900' : 'top-full border-t-slate-900'
       }`}></div>
 
-      <h4 className="font-bold border-b border-slate-700 pb-2 mb-3 text-white uppercase tracking-widest text-sm">
+      <h4 className="font-bold border-b border-slate-700 pb-2 mb-3 text-white uppercase tracking-widest text-xs md:text-sm">
         Vista Previa de Alertas
       </h4>
 
       {cargando ? (
-        <p className="text-slate-100 italic text-center py-4 text-sm animate-pulse">Cargando detalle...</p>
+        <p className="text-slate-100 italic text-center py-4 text-xs md:text-sm animate-pulse">Cargando detalle...</p>
       ) : alertas.length === 0 ? (
-        <p className="text-slate-100 text-center py-3 text-sm">No hay detalle disponible para este estado</p>
+        <p className="text-slate-100 text-center py-3 text-xs md:text-sm">No hay detalle disponible para este estado</p>
       ) : (
         <ul className="space-y-2.5">
           {alertas.map((al, i) => (
-            <li key={i} className="bg-slate-800 p-3 rounded-lg border border-slate-700/50 flex flex-col">
+            <li key={i} className="bg-slate-800 p-2.5 md:p-3 rounded-lg border border-slate-700/50 flex flex-col">
               <div className="flex justify-between items-center mb-1.5">
-                <span className="font-mono text-sm text-red-200 bg-red-900/40 px-2 py-0.5 rounded border border-red-400/20 truncate max-w-[140px]" title={al.codigoregla}>
+                <span className="font-mono text-[10px] md:text-sm text-red-200 bg-red-900/40 px-2 py-0.5 rounded border border-red-400/20 truncate max-w-[120px] md:max-w-[140px]" title={al.codigoregla}>
                   {al.codigoregla}
                 </span>
-                <span className="font-bold text-emerald-400 text-sm">
+                <span className="font-bold text-emerald-400 text-xs md:text-sm">
                   S/ {parseFloat(al.monto || 0).toFixed(2)}
                 </span>
               </div>
-              <p className="text-sm text-slate-50 font-medium mb-1.5 whitespace-normal" title={al.regla}>
+              <p className="text-xs md:text-sm text-slate-50 font-medium mb-1.5 whitespace-normal" title={al.regla}>
                 {al.regla || 'Alerta de riesgo'}
               </p>
-              <div className="flex justify-between items-center text-xs text-slate-200">
+              <div className="flex justify-between items-center text-[10px] md:text-xs text-slate-200">
                 <span>{al.event_type || 'Transacción'}</span>
                 <span>{new Date(al.fecha).toLocaleString()}</span>
               </div>
@@ -81,8 +84,8 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
       )}
 
       {!cargando && alertas.length === 5 && (
-        <p className="text-center text-xs text-slate-100 mt-3 italic border-t border-slate-800 pt-2">
-          + más alertas ocultas (abrir revisión para ver todas)
+        <p className="text-center text-[10px] md:text-xs text-slate-100 mt-3 italic border-t border-slate-800 pt-2">
+          + más alertas (abrir revisión para ver todas)
         </p>
       )}
     </div>
@@ -107,7 +110,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
 
     setCargando(true);
     const cargarDatos = () => {
-      // 1. Extraemos de forma segura los filtros (por si usas un campo o el otro)
       const busquedaDni = filtros?.busqueda?.trim() || '';
       const busquedaCodigoEntidad = filtros?.codigoEntidad?.trim() || '';
       
@@ -117,7 +119,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
 
       let url = `/api/alerts/grouped?status=${vistaActual}&page=${paginaActual}&pageSize=${pageSize}`;
 
-      // 2. Enrutador: Si hay búsqueda, cambiamos la URL a la consulta específica
       if (hayBusqueda) {
         if (esUUID) {
           url = `/api/alerts/entity/${textoBusqueda}?status=${vistaActual}`;
@@ -135,7 +136,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           return res.json();
         })
         .then(data => {
-          // 3. Empaquetado seguro de datos
           let arrData = [];
           if (Array.isArray(data)) {
             arrData = data;
@@ -148,19 +148,23 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
             }
           }
 
-          // 🚨 4. EL FILTRO RESTAURADO: ¡Esto es lo que faltaba para que respete la pestaña!
           arrData = arrData.filter(item => {
             if (!item) return false;
             const s = item.status || item.estado;
-            // Si el estado viene nulo, lo dejamos pasar por seguridad, pero si trae estado, DEBE ser igual a la pestaña actual
             return !s || String(s).toUpperCase() === String(vistaActual).toUpperCase();
           });
 
-          // 5. Agrupador visual: Si es una búsqueda directa, el backend manda historial crudo, la tabla debe agruparlo visualmente
           if (hayBusqueda) {
             const agrupado = {};
             arrData.forEach(item => {
-              let id = item.codigo_entidad || item.customer_id || item.merchant_id || item.dni || item.document_number || textoBusqueda;
+              let id = null;
+              const posiblesIds = [item.codigo_entidad, item.customer_id, item.merchant_id];
+              for (let pid of posiblesIds) {
+                if (pid && typeof pid === 'string' && /^[0-9a-fA-F]{8}-/.test(pid)) {
+                  id = pid; break;
+                }
+              }
+              if (!id) id = item.dni || item.document_number || textoBusqueda;
 
               if (!agrupado[id]) {
                 agrupado[id] = { ...item, id_agrupacion: id };
@@ -188,14 +192,12 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
              }));
           }
 
-          // 6. Ordenamiento por fecha reciente
           arrData.sort((a, b) => {
             const fechaA = a.fecha_ultima_compra || a.fecha_ultima_alerta || a.ultima_fecha || a.max_fecha || a.fecha || 0;
             const fechaB = b.fecha_ultima_compra || b.fecha_ultima_alerta || b.ultima_fecha || b.max_fecha || b.fecha || 0;
             return new Date(fechaB) - new Date(fechaA); 
           });
 
-          // 7. Paginación segura
           let infoPaginacion = null;
           const totalDesdeFila = arrData[0]?.total_count || data?.[0]?.total_count || data?.data?.[0]?.total_count;
 
@@ -253,10 +255,15 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   };
 
   return (
-    <div className="p-8 animate-fade-in h-full flex flex-col">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible flex-1 flex flex-col">
-        <div className="overflow-visible flex-1">
-          <table className="w-full text-left border-collapse relative">
+    <div className="p-3 md:p-8 animate-fade-in h-full flex flex-col">
+      <div className="bg-white md:rounded-2xl shadow-sm md:border border-gray-100 overflow-visible flex-1 flex flex-col">
+        
+        <div className="overflow-visible flex-1 bg-gray-50 md:bg-white">
+          
+          {/* ==================================================================================== */}
+          {/* 💻 VISTA ESCRITORIO: LA TABLA CLÁSICA */}
+          {/* ==================================================================================== */}
+          <table className="hidden md:table w-full text-left border-collapse relative min-w-[800px]">
             <thead className="bg-gray-50/90 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-400 sticky top-0 backdrop-blur-sm z-10">
               <tr>
                 <th className="px-6 py-4 font-bold">Última Compra</th>
@@ -275,7 +282,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               ) : (
                 entidades.map((entidad, idx) => {
                   const fechaRaw = entidad.fecha_ultima_compra || entidad.fecha_ultima_alerta || entidad.ultima_fecha || entidad.max_fecha || entidad.fecha;
-                  
                   const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
                   const isHovered = hoveredEntityId === idEntidadFinal;
 
@@ -297,12 +303,14 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </td>
 
                       <td className={`px-6 py-4 text-center relative ${isHovered ? 'z-50' : 'z-0'}`}>
+                        {/* 🚀 ADAPTACIÓN: Agregamos onClick para que también se pueda abrir al tocar (pantallas táctiles grandes) */}
                         <div 
                           onMouseEnter={() => setHoveredEntityId(idEntidadFinal)}
                           onMouseLeave={() => setHoveredEntityId(null)}
+                          onClick={() => setHoveredEntityId(hoveredEntityId === idEntidadFinal ? null : idEntidadFinal)}
                           className="inline-block relative"
                         >
-                          <span className="bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold border border-red-200 shadow-sm cursor-help block">
+                          <span className="bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold border border-red-200 shadow-sm cursor-pointer block">
                             {entidad.total_alertas || 1} alertas
                           </span>
                           {isHovered && (
@@ -333,26 +341,102 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               )}
             </tbody>
           </table>
+
+          {/* ==================================================================================== */}
+          {/* 📱 VISTA MÓVIL: TARJETAS CON TOOLTIP HABILITADO */}
+          {/* ==================================================================================== */}
+          <div className="block md:hidden space-y-3 pb-4">
+            {cargando ? (
+              <p className="text-center py-12 text-gray-400 font-bold italic">Consultando entidades...</p>
+            ) : entidades.length === 0 ? (
+              <p className="text-center py-12 text-gray-500 italic">No se encontraron entidades en riesgo.</p>
+            ) : (
+              entidades.map((entidad, idx) => {
+                const fechaRaw = entidad.fecha_ultima_compra || entidad.fecha_ultima_alerta || entidad.ultima_fecha || entidad.max_fecha || entidad.fecha;
+                const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
+                const isHovered = hoveredEntityId === idEntidadFinal;
+
+                return (
+                  <div key={idEntidadFinal || `card-${idx}`} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
+                    
+                    {/* Fila Superior: Fecha y Badge de Alertas (CON TOOLTIP INCORPORADO) */}
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-xs text-gray-500">
+                        {fechaRaw ? new Date(fechaRaw).toLocaleString() : '—'}
+                      </span>
+                      
+                      {/* 🚀 EL CONTENEDOR DEL TOOLTIP EN MÓVIL */}
+                      <div 
+                        className={`relative ${isHovered ? 'z-50' : 'z-0'}`}
+                        onMouseEnter={() => setHoveredEntityId(idEntidadFinal)}
+                        onMouseLeave={() => setHoveredEntityId(null)}
+                        // En móvil, tocar abre o cierra el tooltip
+                        onClick={() => setHoveredEntityId(hoveredEntityId === idEntidadFinal ? null : idEntidadFinal)}
+                      >
+                        <span className="bg-red-100 text-red-600 px-2.5 py-1 rounded-md text-[10px] font-bold border border-red-200 shadow-sm cursor-pointer block">
+                          {entidad.total_alertas || 1} alertas
+                        </span>
+                        {isHovered && (
+                          <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Centro: Nombre del Cliente y Riesgo */}
+                    <div className="mb-4">
+                      <h3 className="font-bold text-gray-800 text-base leading-tight">
+                        {entidad.cliente || entidad.full_name || 'Cliente no registrado'}
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {entidad.dni || entidad.document_number ? `Doc: ${entidad.dni || entidad.document_number}` : 'Identificador de Entidad'}
+                      </p>
+                    </div>
+
+                    {/* Fila Inferior: Monto y Botón */}
+                    <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Riesgo Total</p>
+                        <p className="font-black text-power-purple text-lg">
+                          S/ {parseFloat(entidad.monto_total_riesgo || entidad.monto || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <button
+                        className="bg-power-purple text-white font-bold px-4 py-2.5 rounded-lg text-xs shadow-md active:scale-95 transition-transform disabled:opacity-50"
+                        disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
+                        onClick={() => onAbrirRevision(
+                          idEntidadFinal, 
+                          entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name
+                        )}
+                      >
+                        {idEntidadFinal && idEntidadFinal !== 'ID_ERROR' ? 'Revisar' : 'Inválido'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
+        {/* Paginación Adaptativa */}
         {!cargando && paginacionInfo && (
-          <div className="bg-gray-50 border-t border-gray-100 p-4 flex items-center justify-between shrink-0">
-            <p className="text-xs text-gray-500">
-              Mostrando página <span className="font-bold text-gray-800">{paginacionInfo.currentPage}</span> de <span className="font-bold text-gray-800">{paginacionInfo.totalPages}</span>
-              <span className="ml-2 text-gray-400">({paginacionInfo.totalItems} agrupaciones encontradas)</span>
+          <div className="bg-white border-t border-gray-100 p-3 md:p-4 flex flex-col md:flex-row items-center justify-between shrink-0 gap-3 md:gap-0">
+            <p className="text-xs text-gray-500 text-center md:text-left">
+              Mostrando pág <span className="font-bold text-gray-800">{paginacionInfo.currentPage}</span> de <span className="font-bold text-gray-800">{paginacionInfo.totalPages}</span>
+              <span className="ml-1 text-gray-400 hidden sm:inline">({paginacionInfo.totalItems} agrupaciones)</span>
             </p>
             
-            <div className="flex items-center space-x-3">
-              <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginacionInfo.currentPage === 1} className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+            <div className="flex items-center space-x-2 w-full md:w-auto justify-between md:justify-end">
+              <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginacionInfo.currentPage === 1} className="px-3 md:px-4 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform">
                 Anterior
               </button>
               
-              <div className="flex items-center space-x-1.5 bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow-sm">
-                <span className="text-[11px] text-gray-400 uppercase tracking-tight font-medium">Ir a:</span>
-                <input type="text" value={inputPagina} onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} onBlur={procesarSaltoPagina} className="w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-power-purple focus:bg-white" />
+              <div className="flex items-center space-x-1.5 bg-gray-50 border border-gray-200 px-2 py-1 rounded-lg shadow-sm">
+                <span className="text-[10px] text-gray-400 uppercase font-medium hidden sm:inline">Ir a:</span>
+                <input type="text" value={inputPagina} onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} onBlur={procesarSaltoPagina} className="w-8 md:w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-power-purple" />
               </div>
 
-              <button onClick={() => setPaginaActual(p => p + 1)} disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} className="px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-power-blue/5">
+              <button onClick={() => setPaginaActual(p => p + 1)} disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} className="px-3 md:px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform">
                 Siguiente
               </button>
             </div>

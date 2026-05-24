@@ -244,8 +244,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     <>
       <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`} onClick={onClose}></div>
 
-      <div className={`fixed right-0 top-0 h-full w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 overflow-y-auto ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="p-6">
+        <div className={`fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 overflow-y-auto ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>        <div className="p-6">
           <div className="flex justify-between items-center border-b pb-4 mb-6">
             <h3 className="text-xl font-bold text-power-blue">Revisión de Entidad (Agrupada)</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 font-bold text-xl">✕</button>
@@ -287,8 +286,8 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                     </div>
                   </div>
 
-                  {/* Grid de Auditoría */}
-                  <div className="grid grid-cols-4 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm text-center">
+                  {/* Grid de Auditoría Adaptable */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm text-center">
                     <div>
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">1° Compra</span>
                       <span className="text-[11px] font-semibold text-slate-800 bg-white px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_primera ? new Date(info.fecha_primera).toLocaleString() : '—'}>
