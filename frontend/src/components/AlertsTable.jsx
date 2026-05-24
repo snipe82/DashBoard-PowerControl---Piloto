@@ -6,39 +6,47 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
 
   useEffect(() => {
     if (!entityId) return;
+    
+    const controller = new AbortController();
     setCargando(true);
-
+    
     const cleanId = String(entityId).trim();
     const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanId);
     let urlEndpoint = `/api/alerts/entity/${cleanId}?status=${vistaActual}`;
-
+    
     if (!esUUID) {
       urlEndpoint = `/api/alerts/dni/${cleanId}?status=${vistaActual}`;
     }
 
-    fetch(urlEndpoint)
+    fetch(urlEndpoint, { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
         const arr = data.data || (Array.isArray(data) ? data : []);
         const alertsFiltered = arr.filter(al => {
           const s = al.status || al.estado;
-          return !s || s.toUpperCase() === vistaActual.toUpperCase();
+          return !s || String(s).toUpperCase() === String(vistaActual).toUpperCase();
         });
         alertsFiltered.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         setAlertas(alertsFiltered.slice(0, 5));
         setCargando(false);
       })
-      .catch(() => setCargando(false));
+      .catch((err) => {
+        if (err.name === 'AbortError') return;
+        setCargando(false);
+      });
+
+    return () => controller.abort();
   }, [entityId, vistaActual]);
 
-  // 🚀 FIX VISUAL: Ampliamos el umbral para que las primeras 6 filas abran hacia abajo y no choquen con el techo
   const isTooHigh = idx < 6;
 
   return (
-    <div className={`absolute z-50 left-1/2 -translate-x-1/2 w-[480px] bg-slate-900 text-white rounded-xl shadow-2xl p-5 border border-slate-700 pointer-events-none transition-opacity duration-200 animate-fade-in ${isTooHigh ? 'top-full mt-3' : 'bottom-full mb-3'
-      }`}>
-      <div className={`absolute left-1/2 -translate-x-1/2 border-[6px] border-transparent ${isTooHigh ? 'bottom-full border-b-slate-900' : 'top-full border-t-slate-900'
-        }`}></div>
+    <div className={`absolute z-50 left-1/2 -translate-x-1/2 w-[480px] bg-slate-900 text-white rounded-xl shadow-2xl p-5 border border-slate-700 pointer-events-none transition-opacity duration-200 animate-fade-in ${
+      isTooHigh ? 'top-full mt-3' : 'bottom-full mb-3'
+    }`}>
+      <div className={`absolute left-1/2 -translate-x-1/2 border-[6px] border-transparent ${
+        isTooHigh ? 'bottom-full border-b-slate-900' : 'top-full border-t-slate-900'
+      }`}></div>
 
       <h4 className="font-bold border-b border-slate-700 pb-2 mb-3 text-white uppercase tracking-widest text-sm">
         Vista Previa de Alertas
@@ -94,44 +102,100 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   useEffect(() => { setPaginaActual(1); }, [vistaActual, filtros]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     setCargando(true);
     const cargarDatos = () => {
-      let url = `/api/alerts/grouped?status=${vistaActual}&page=${paginaActual}&pageSize=${pageSize}`;
-
+      // 1. Extraemos de forma segura los filtros (por si usas un campo o el otro)
       const busquedaDni = filtros?.busqueda?.trim() || '';
       const busquedaCodigoEntidad = filtros?.codigoEntidad?.trim() || '';
+      
+      const textoBusqueda = busquedaCodigoEntidad || busquedaDni;
+      const hayBusqueda = textoBusqueda !== '';
+      const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i.test(textoBusqueda);
 
-      if (busquedaCodigoEntidad !== '') {
-        url = `/api/alerts/entity/${busquedaCodigoEntidad}?status=${vistaActual}`;
-      } else if (busquedaDni !== '') {
-        url = `/api/alerts/dni/${busquedaDni}?status=${vistaActual}`;
+      let url = `/api/alerts/grouped?status=${vistaActual}&page=${paginaActual}&pageSize=${pageSize}`;
+
+      // 2. Enrutador: Si hay búsqueda, cambiamos la URL a la consulta específica
+      if (hayBusqueda) {
+        if (esUUID) {
+          url = `/api/alerts/entity/${textoBusqueda}?status=${vistaActual}`;
+        } else {
+          url = `/api/alerts/dni/${textoBusqueda}?status=${vistaActual}`;
+        }
       }
 
       if (filtros?.fechaInicio) url += `&dateFrom=${filtros.fechaInicio}`;
       if (filtros?.fechaFin) url += `&dateTo=${filtros.fechaFin}`;
 
-      fetch(url)
+      fetch(url, { signal })
         .then(res => {
           if (!res.ok) throw new Error("Error en la red");
           return res.json();
         })
         .then(data => {
+          // 3. Empaquetado seguro de datos
           let arrData = [];
-          if (Array.isArray(data)) arrData = data;
-          else if (data && Array.isArray(data.data)) arrData = data.data;
-          else if (data && typeof data === 'object' && Object.keys(data).length > 0) arrData = [data.data || data];
+          if (Array.isArray(data)) {
+            arrData = data;
+          } else if (data && Array.isArray(data.data)) {
+            arrData = data.data;
+          } else if (data && typeof data === 'object') {
+            const obj = data.data || data;
+            if (obj && (obj.alert_id || obj.cliente || obj.dni || obj.customer_id)) {
+              arrData = [obj];
+            }
+          }
 
+          // 🚨 4. EL FILTRO RESTAURADO: ¡Esto es lo que faltaba para que respete la pestaña!
           arrData = arrData.filter(item => {
+            if (!item) return false;
             const s = item.status || item.estado;
-            return !s || s.toUpperCase() === vistaActual.toUpperCase();
+            // Si el estado viene nulo, lo dejamos pasar por seguridad, pero si trae estado, DEBE ser igual a la pestaña actual
+            return !s || String(s).toUpperCase() === String(vistaActual).toUpperCase();
           });
 
+          // 5. Agrupador visual: Si es una búsqueda directa, el backend manda historial crudo, la tabla debe agruparlo visualmente
+          if (hayBusqueda) {
+            const agrupado = {};
+            arrData.forEach(item => {
+              let id = item.codigo_entidad || item.customer_id || item.merchant_id || item.dni || item.document_number || textoBusqueda;
+
+              if (!agrupado[id]) {
+                agrupado[id] = { ...item, id_agrupacion: id };
+                if (!item.hasOwnProperty('total_alertas')) {
+                  agrupado[id].total_alertas = 1;
+                  agrupado[id].monto_total_riesgo = parseFloat(item.monto || 0);
+                }
+              } else {
+                if (!item.hasOwnProperty('total_alertas')) {
+                  agrupado[id].total_alertas += 1;
+                  agrupado[id].monto_total_riesgo += parseFloat(item.monto || 0);
+                }
+                const d1 = new Date(agrupado[id].fecha_ultima_compra || agrupado[id].fecha || 0);
+                const d2 = new Date(item.fecha_ultima_compra || item.fecha || 0);
+                if (d2 > d1) {
+                  agrupado[id].fecha_ultima_compra = item.fecha || item.fecha_ultima_compra;
+                }
+              }
+            });
+            arrData = Object.values(agrupado);
+          } else {
+             arrData = arrData.map(item => ({
+                ...item,
+                id_agrupacion: item.codigo_entidad || item.customer_id || item.merchant_id || item.dni || item.document_number
+             }));
+          }
+
+          // 6. Ordenamiento por fecha reciente
           arrData.sort((a, b) => {
             const fechaA = a.fecha_ultima_compra || a.fecha_ultima_alerta || a.ultima_fecha || a.max_fecha || a.fecha || 0;
             const fechaB = b.fecha_ultima_compra || b.fecha_ultima_alerta || b.ultima_fecha || b.max_fecha || b.fecha || 0;
-            return new Date(fechaB) - new Date(fechaA);
+            return new Date(fechaB) - new Date(fechaA); 
           });
 
+          // 7. Paginación segura
           let infoPaginacion = null;
           const totalDesdeFila = arrData[0]?.total_count || data?.[0]?.total_count || data?.data?.[0]?.total_count;
 
@@ -150,7 +214,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               currentPage: paginaActual,
               pageSize: pageSize,
               totalItems: arrData.length,
-              totalPages: arrData.length === pageSize ? paginaActual + 1 : paginaActual
+              totalPages: Math.ceil(arrData.length / pageSize) || 1
             };
           }
 
@@ -160,7 +224,8 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           setCargando(false);
         })
         .catch(error => {
-          console.error("Error cargando la tabla agrupada:", error);
+          if (error.name === 'AbortError') return; 
+          console.error("Error cargando la tabla:", error);
           setEntidades([]);
           setPaginacionInfo(null);
           setCargando(false);
@@ -169,7 +234,11 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
 
     cargarDatos();
     const intervalo = setInterval(cargarDatos, 30000);
-    return () => intervalo && clearInterval(intervalo);
+
+    return () => {
+      clearInterval(intervalo);
+      controller.abort(); 
+    };
   }, [vistaActual, filtros, paginaActual, refreshTrigger]);
 
   const procesarSaltoPagina = () => {
@@ -206,25 +275,13 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               ) : (
                 entidades.map((entidad, idx) => {
                   const fechaRaw = entidad.fecha_ultima_compra || entidad.fecha_ultima_alerta || entidad.ultima_fecha || entidad.max_fecha || entidad.fecha;
-
-                  const busquedaDni = filtros?.busqueda?.trim() || '';
-                  const busquedaCodigo = filtros?.codigoEntidad?.trim() || '';
-
-                  let idEntidadFinal = null;
-
-                  if (busquedaDni) {
-                    idEntidadFinal = entidad.dni || entidad.document_number || busquedaDni;
-                  } else if (busquedaCodigo) {
-                    idEntidadFinal = entidad.customer_id || entidad.cliente_id || busquedaCodigo;
-                  } else {
-                    idEntidadFinal = entidad.codigo_entidad || entidad.customer_id || entidad.merchant_id || entidad.dni || entidad.document_number;
-                  }
-
+                  
+                  const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
                   const isHovered = hoveredEntityId === idEntidadFinal;
 
                   return (
-                    <tr
-                      key={idEntidadFinal || `entidad-${idx}`}
+                    <tr 
+                      key={idEntidadFinal || `entidad-${idx}`} 
                       className={`hover:bg-gray-50 transition-colors group ${isHovered ? 'relative z-50' : 'relative z-0'}`}
                     >
                       <td className="px-6 py-4 text-gray-500">
@@ -240,7 +297,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </td>
 
                       <td className={`px-6 py-4 text-center relative ${isHovered ? 'z-50' : 'z-0'}`}>
-                        <div
+                        <div 
                           onMouseEnter={() => setHoveredEntityId(idEntidadFinal)}
                           onMouseLeave={() => setHoveredEntityId(null)}
                           className="inline-block relative"
@@ -261,13 +318,13 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       <td className="px-6 py-4 text-right">
                         <button
                           className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity bg-power-purple/10 px-4 py-2 rounded-lg disabled:opacity-50"
-                          disabled={!idEntidadFinal}
+                          disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                           onClick={() => onAbrirRevision(
-                            idEntidadFinal,
+                            idEntidadFinal, 
                             entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name
                           )}
                         >
-                          {idEntidadFinal ? 'Revisar Entidad' : 'ID Inválido'}
+                          {idEntidadFinal && idEntidadFinal !== 'ID_ERROR' ? 'Revisar Entidad' : 'ID Inválido'}
                         </button>
                       </td>
                     </tr>
@@ -284,12 +341,12 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               Mostrando página <span className="font-bold text-gray-800">{paginacionInfo.currentPage}</span> de <span className="font-bold text-gray-800">{paginacionInfo.totalPages}</span>
               <span className="ml-2 text-gray-400">({paginacionInfo.totalItems} agrupaciones encontradas)</span>
             </p>
-
+            
             <div className="flex items-center space-x-3">
               <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginacionInfo.currentPage === 1} className="px-4 py-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
                 Anterior
               </button>
-
+              
               <div className="flex items-center space-x-1.5 bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow-sm">
                 <span className="text-[11px] text-gray-400 uppercase tracking-tight font-medium">Ir a:</span>
                 <input type="text" value={inputPagina} onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} onBlur={procesarSaltoPagina} className="w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-power-purple focus:bg-white" />
