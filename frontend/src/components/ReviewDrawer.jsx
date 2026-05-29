@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const traducirEstado = (estado) => {
   const diccionario = {
@@ -24,6 +24,9 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
 
   const [comentario, setComentario] = useState('');
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
+
+  // 🚀 LA REFERENCIA MÁGICA: Le daremos esta brújula al formulario del fondo
+  const formDictamenRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,7 +59,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
         .then(resJson => {
           setRawResponse(resJson);
 
-          // 🚀 BLINDAJE CONTRA ERRORES FANTASMAS DEL BACKEND
           let rawAlerts = [];
           if (Array.isArray(resJson)) {
             rawAlerts = resJson;
@@ -64,7 +66,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
             rawAlerts = resJson.data;
           } else if (resJson && typeof resJson === 'object') {
             const obj = resJson.data || resJson;
-            // Solo creamos el array si realmente parece una alerta válida (con fecha, dni, alert_id, etc.)
             if (obj && (obj.alert_id || obj.fecha || obj.monto || obj.dni || obj.cliente)) {
               rawAlerts = [obj];
             }
@@ -185,7 +186,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     ? (telefonoNativoEnLista.celular || telefonoNativoEnLista.telefono || telefonoNativoEnLista.phone || telefonoNativoEnLista.mobile)
     : '';
 
-  // 🚀 LA SOLUCIÓN MAESTRA SE MANTIENE INTACTA
   const guardarRevisionMasiva = async () => {
     if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
     if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
@@ -240,18 +240,48 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
 
   const esSoloLectura = estadoActual === 'DISCARDED';
 
+  // 🚀 NUEVO: Función para el auto-scroll suave
+  const scrollToDictamen = () => {
+    formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <>
       <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`} onClick={onClose}></div>
 
-        <div className={`fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 overflow-y-auto ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>        <div className="p-6">
-          <div className="flex justify-between items-center border-b pb-4 mb-6">
-            <h3 className="text-xl font-bold text-power-blue">Revisión de Entidad (Agrupada)</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 font-bold text-xl">✕</button>
+        {/* 🚀 MODIFICADO: Agregamos flex y flex-col al contenedor maestro para poder anclar la cabecera */}
+        <div className={`fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          
+          {/* ========================================================= */}
+          {/* 🚀 CABECERA INMORTAL (Siempre visible) */}
+          {/* ========================================================= */}
+          <div className="flex justify-between items-center border-b p-4 md:p-6 bg-white shrink-0 z-20 shadow-sm">
+            <h3 className="text-xl font-bold text-power-blue truncate pr-2">Revisión de Entidad</h3>
+            <div className="flex items-center gap-2 md:gap-3 shrink-0">
+              
+              {/* EL BOTÓN TELETRANSPORTADOR */}
+              <button 
+                onClick={scrollToDictamen} 
+                className="text-[10px] md:text-xs bg-power-purple/10 text-power-purple px-3 py-1.5 rounded-full font-bold hover:bg-power-purple/20 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-power-purple/20"
+              >
+                ⬇️ <span className="hidden sm:inline">Dictamen</span>
+              </button>
+              
+              <button 
+                onClick={onClose} 
+                className="text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-xl active:scale-90 w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
+          {/* ========================================================= */}
+          {/* 🚀 CUERPO DEL CAJÓN (Esta es la parte que hace scroll) */}
+          {/* ========================================================= */}
+          <div className="p-4 md:p-6 overflow-y-auto flex-1 bg-white">
           {cargando ? (
-            <p className="text-center py-10 text-gray-400 italic">Cargando expediente de la entidad...</p>
+            <p className="text-center py-10 text-gray-400 italic animate-pulse">Cargando expediente de la entidad...</p>
           ) : (
             <div className="space-y-6">
 
@@ -261,19 +291,17 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                   <div className="bg-power-purple/5 rounded-xl p-4 border border-power-purple/20 grid grid-cols-2 gap-4 shadow-sm text-sm">
                     <div className="col-span-2 border-b border-gray-200 pb-2 mb-2">
                       <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
-                      <p className="text-lg font-black text-gray-800">{info.display_name}</p>
+                      <p className="text-lg font-black text-gray-800 leading-tight">{info.display_name}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase font-bold">{info.id_label}</p>
                       <div className="flex items-center space-x-2 mt-0.5">
-                        <p className="font-bold text-slate-700 font-mono text-xs bg-white px-2 py-1 rounded-md border border-slate-200/60 truncate max-w-[140px]" title={info.id_value}>
+                        <p className="font-bold text-slate-700 font-mono text-xs bg-white px-2 py-1 rounded-md border border-slate-200/60 truncate max-w-[120px] md:max-w-[140px]" title={info.id_value}>
                           {info.id_value}
                         </p>
                         <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(info.id_value);
-                          }}
-                          className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center"
+                          onClick={() => navigator.clipboard.writeText(info.id_value)}
+                          className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center shrink-0"
                           title="Copiar identificador completo"
                         >
                           📋
@@ -281,13 +309,13 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                       </div>
                     </div>
                     <div>
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado (Transacciones)</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado</p>
                       <p className="font-bold text-red-600 text-lg mt-0.5">S/ {parseFloat(info.monto_total || 0).toFixed(2)}</p>
                     </div>
                   </div>
 
                   {/* Grid de Auditoría Adaptable */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm text-center">
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm text-center">
                     <div>
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">1° Compra</span>
                       <span className="text-[11px] font-semibold text-slate-800 bg-white px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_primera ? new Date(info.fecha_primera).toLocaleString() : '—'}>
@@ -319,137 +347,127 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                     </div>
                   </div>
 
-                  {/* Historial de Eventos */}
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
-                    <div className="bg-gray-200/50 p-3 border-b border-gray-200">
+                  {/* TIMELINE DE EVENTOS */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col">
+                    <div className="bg-gray-200/50 p-3 border-b border-gray-200 shrink-0">
                       <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Historial de Eventos ({totalAlertasCargadas})</h4>
                     </div>
-                    <div className="max-h-56 overflow-y-auto">
-                      <table className="w-full text-left text-[11px]">
-                        <thead className="bg-gray-100 text-gray-500 sticky top-0 z-10 uppercase tracking-wider text-[9px] font-bold">
-                          <tr>
-                            <th className="p-2 text-center w-8">Sel.</th>
-                            <th className="p-2">Fecha</th>
-                            <th className="p-2">DNI</th>
-                            <th className="p-2">Cliente</th>
-                            <th className="p-2">Celular</th>
-                            <th className="p-2">Comercio</th>
-                            <th className="p-2">Regla / Evento</th>
-                            <th className="p-2 text-right">Importe</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200 bg-white">
-                          {alertas.map((al, idx) => {
-                            const estaSeleccionado = selectedAlertId === al.alert_id;
+                    
+                    <div className="max-h-80 overflow-y-auto p-3 space-y-3">
+                      {alertas.map((al, idx) => {
+                        const estaSeleccionado = selectedAlertId === al.alert_id;
 
-                            const celularDelPayload = payloadData?.telephonenumber ||
-                              payloadData?.phone ||
-                              payloadData?.customer?.phone ||
-                              payloadData?.mobile;
+                        const celularDelPayload = payloadData?.telephonenumber ||
+                          payloadData?.phone ||
+                          payloadData?.customer?.phone ||
+                          payloadData?.mobile;
 
-                            const phoneFinal = al.celular || al.telefono || al.phone || al.mobile || rawTelefonoEncontrado || celularDelPayload;
+                        const phoneFinal = al.celular || al.telefono || al.phone || al.mobile || rawTelefonoEncontrado || celularDelPayload;
 
-                            let textCelular = '—';
-                            let rawPhoneToCopy = '';
+                        let textCelular = '—';
+                        let rawPhoneToCopy = '';
 
-                            if (phoneFinal) {
-                              textCelular = phoneFinal;
-                              rawPhoneToCopy = phoneFinal;
-                            } else if (estaSeleccionado && cargandoPayload) {
-                              textCelular = '⏳...';
-                            } else {
-                              textCelular = 'No reg.';
-                            }
+                        if (phoneFinal) {
+                          textCelular = phoneFinal;
+                          rawPhoneToCopy = phoneFinal;
+                        } else if (estaSeleccionado && cargandoPayload) {
+                          textCelular = '⏳...';
+                        } else {
+                          textCelular = 'No reg.';
+                        }
 
-                            const nombreComercio = al.tienda || al.comercio || al.merchant || al.merchant_name || '—';
+                        const nombreComercio = al.tienda || al.comercio || al.merchant || al.merchant_name || '—';
 
-                            return (
-                              <tr
-                                key={al.alert_id || `alerta-hija-${idx}`}
-                                className={`transition-colors cursor-pointer ${estaSeleccionado ? 'bg-power-purple/5 hover:bg-power-purple/10' : 'hover:bg-gray-50'}`}
-                                onClick={() => {
-                                  setSelectedAlertId(al.alert_id);
-                                  setComentario(al.review_comment || al.comentario || al.comment || '');
-                                }}
-                              >
-                                <td className="p-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="radio"
-                                    name="eventSelector"
-                                    checked={estaSeleccionado}
-                                    onChange={() => {
-                                      setSelectedAlertId(al.alert_id);
-                                      setComentario(al.review_comment || al.comentario || al.comment || '');
-                                    }}
-                                    className="h-3 w-3 text-power-purple focus:ring-power-purple border-gray-300 accent-power-purple"
-                                  />
-                                </td>
-                                <td className="p-2 text-gray-500 whitespace-nowrap">
-                                  {new Date(al.fecha).toLocaleDateString()}
-                                  <br />
-                                  <span className="text-[9px] text-gray-400">{new Date(al.fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                </td>
+                        return (
+                          <div
+                            key={al.alert_id || `alerta-hija-${idx}`}
+                            onClick={() => {
+                              setSelectedAlertId(al.alert_id);
+                              setComentario(al.review_comment || al.comentario || al.comment || '');
+                            }}
+                            className={`cursor-pointer rounded-xl border p-3.5 transition-all ${
+                              estaSeleccionado
+                                ? 'bg-power-purple/5 border-power-purple shadow-sm ring-1 ring-power-purple/30'
+                                : 'bg-white border-gray-200 hover:border-power-purple/40 hover:shadow-sm'
+                            }`}
+                          >
+                             <div className="flex justify-between items-start mb-2">
+                               <div className="flex items-start gap-2.5">
+                                 <div className="mt-0.5 shrink-0">
+                                   <input
+                                     type="radio"
+                                     checked={estaSeleccionado}
+                                     readOnly
+                                     className="h-3.5 w-3.5 text-power-purple focus:ring-power-purple border-gray-300 accent-power-purple cursor-pointer"
+                                   />
+                                 </div>
+                                 <div>
+                                   <span className="font-mono text-[9px] md:text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 font-bold block w-fit mb-0.5 uppercase tracking-tight" title={al.regla}>
+                                     {al.codigoregla}
+                                   </span>
+                                   <span className="text-[10px] md:text-[11px] text-gray-500 font-medium">
+                                     {new Date(al.fecha).toLocaleString()}
+                                   </span>
+                                 </div>
+                               </div>
+                               <div className="text-right shrink-0 ml-2">
+                                 <span className="font-black text-gray-800 text-sm md:text-base block leading-tight">
+                                   S/ {parseFloat(al.monto || 0).toFixed(2)}
+                                 </span>
+                                 <span className="block text-[9px] md:text-[10px] text-slate-400 truncate max-w-[90px] md:max-w-[120px]" title={al.event_type}>
+                                   {al.event_type || '—'}
+                                 </span>
+                               </div>
+                             </div>
 
-                                <td className="p-2 font-mono font-bold text-gray-600 whitespace-nowrap">
-                                  <div className="flex items-center space-x-1.5">
-                                    <span>{al.dni || '—'}</span>
-                                    {al.dni && (
+                             <div className="mb-2 bg-gray-50/80 rounded-lg p-2 md:p-2.5 border border-gray-100 text-[10px] md:text-[11px] space-y-1">
+                               <div className="flex justify-between items-center">
+                                 <span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Comercio:</span>
+                                 <span className="font-medium text-gray-700 truncate text-right">{nombreComercio}</span>
+                               </div>
+                               <div className="flex justify-between items-center">
+                                 <span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Cliente:</span>
+                                 <span className="font-medium text-gray-700 truncate text-right">{al.cliente}</span>
+                               </div>
+                             </div>
+
+                             <div className="flex items-center justify-between text-[10px] md:text-[11px] pt-1">
+                                <div className="flex items-center gap-1.5">
+                                   <span className="font-bold text-gray-400 uppercase tracking-wider">DNI:</span>
+                                   <span className="font-mono font-bold text-gray-600">{al.dni || '—'}</span>
+                                   {al.dni && ( 
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           navigator.clipboard.writeText(al.dni);
                                         }}
-                                        className="p-0.5 bg-slate-50 hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 text-[10px] flex items-center justify-center shadow-xs"
+                                        className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 flex items-center justify-center shadow-xs"
                                         title="Copiar DNI"
                                       >
                                         📋
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-
-                                <td className="p-2 font-medium text-gray-700 truncate max-w-[180px]" title={al.cliente}>
-                                  {al.cliente}
-                                </td>
-
-                                <td className="p-2 font-semibold text-gray-700 whitespace-nowrap">
-                                  <div className="flex items-center space-x-1.5">
-                                    <span>{textCelular}</span>
-                                    {rawPhoneToCopy && (
+                                      </button> 
+                                   )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                   <span className="font-bold text-gray-400 uppercase tracking-wider">Telf:</span>
+                                   <span className="font-semibold text-gray-600">{textCelular}</span>
+                                   {rawPhoneToCopy && ( 
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           navigator.clipboard.writeText(rawPhoneToCopy);
                                         }}
-                                        className="p-0.5 bg-slate-50 hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 text-[10px] flex items-center justify-center shadow-xs"
+                                        className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 flex items-center justify-center shadow-xs"
                                         title="Copiar número celular"
                                       >
                                         📋
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-
-                                <td className="p-2 font-medium text-gray-600 truncate max-w-[150px]" title={nombreComercio}>
-                                  {nombreComercio}
-                                </td>
-
-                                <td className="p-2">
-                                  <span className="font-mono text-[9px] text-red-500 bg-red-50 px-1 py-0.5 rounded border border-red-100 font-bold block w-fit mb-0.5" title={al.regla}>
-                                    {al.codigoregla}
-                                  </span>
-                                  <span className="text-[9px] text-slate-400 block truncate max-w-[100px]" title={al.event_type}>
-                                    {al.event_type}
-                                  </span>
-                                </td>
-                                <td className="p-2 font-black text-right text-gray-800 whitespace-nowrap">
-                                  S/ {parseFloat(al.monto || 0).toFixed(2)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                                      </button> 
+                                   )}
+                                </div>
+                             </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -464,7 +482,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                           onClick={() => {
                             navigator.clipboard.writeText(JSON.stringify(payloadData, null, 2));
                           }}
-                          className="text-[9px] font-black text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                          className="text-[9px] font-black text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors active:scale-95"
                         >
                           Copiar JSON
                         </button>
@@ -481,13 +499,16 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                     </pre>
                   </div>
 
-                  {/* Formulario Dictamen */}
-                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  {/* ========================================================= */}
+                  {/* 🚀 FORMULARIO DICTAMEN (El destino del scroll) */}
+                  {/* ========================================================= */}
+                  {/* Le pasamos el "formDictamenRef" para que React sepa dónde apuntar */}
+                  <div ref={formDictamenRef} className="bg-gray-50 p-4 rounded-xl border border-gray-200 scroll-mt-6">
                     <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Global en Lote</h4>
                     <div className="space-y-4">
                       <div>
                         <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
-                        <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple">
+                        <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none">
 
                           {estadoActual === 'OPEN' && (
                             <option value="IN_REVIEW">Pasar a En Revisión</option>
@@ -511,11 +532,11 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                       </div>
                       <div>
                         <label className="block text-xs font-bold mb-1">Comentario de Evento Seleccionado</label>
-                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple" placeholder="Explica el motivo de tu decisión..."></textarea>
+                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none" placeholder="Explica el motivo de tu decisión..."></textarea>
                       </div>
                       {!esSoloLectura && (
-                        <button onClick={guardarRevisionMasiva} className="w-full bg-power-purple text-white font-bold py-2 rounded-lg shadow-md hover:bg-power-purple/80 transition-all">
-                          Guardar y Resolver {cantidadAlertasCliente} Alertas de Cliente Seleccionado
+                        <button onClick={guardarRevisionMasiva} className="w-full bg-power-purple text-white font-bold py-3 rounded-lg shadow-md hover:bg-power-purple/80 transition-all active:scale-95 text-sm md:text-base">
+                          Guardar y Resolver {cantidadAlertasCliente} Alertas de Cliente
                         </button>
                       )}
                     </div>
@@ -529,16 +550,16 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                 </div>
               )}
 
-              <div className="pt-2 text-center">
-                <span className="text-[9px] font-mono text-slate-300 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+              <div className="pt-2 text-center pb-4">
+                <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
                   Sincronización de Eventos: {alertas.length} registros renderizados
                 </span>
               </div>
 
             </div>
           )}
+          </div>
         </div>
-      </div>
     </>
   );
 };
