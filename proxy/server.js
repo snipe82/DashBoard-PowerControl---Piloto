@@ -42,7 +42,7 @@ app.get('/api/alerts/dni/:dni', async (req, res) => {
     }
 });
 
-// 🚀 ENPOINT: OBTENER LISTADO AGRUPADO POR ENTIDADES
+// OBTENER LISTADO AGRUPADO POR ENTIDADES
 app.get('/api/alerts/grouped', async (req, res) => {
     try {
         const { status, page, pageSize, dateFrom, dateTo, search } = req.query;
@@ -60,7 +60,7 @@ app.get('/api/alerts/grouped', async (req, res) => {
     }
 });
 
-// 🚀 ENDPOINT: OBTENER EL DETALLE COMPLETO DE UNA ENTIDAD POR UUID
+// OBTENER EL DETALLE COMPLETO DE UNA ENTIDAD POR UUID
 app.get('/api/alerts/entity/:id', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.id}`, {
@@ -74,7 +74,7 @@ app.get('/api/alerts/entity/:id', async (req, res) => {
     }
 });
 
-// 🚀 ENDPOINT: PROXY ENVIAR REVISIÓN MASIVA POR ENTIDAD
+// PROXY ENVIAR REVISIÓN MASIVA POR ENTIDAD
 app.patch('/api/alerts/entity/:id/review', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.id}/review`, {
@@ -110,6 +110,22 @@ app.get('/api/alerts/:id/payload', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
+// ======================================================================================
+// 🚀 NUEVO ENDPOINT: PROXY DE LÍNEA DE TIEMPO DE AUDITORÍA UNIFICADA POR CLIENTE (CUSTOMER)
+// ======================================================================================
+app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/customer/${req.params.customer_id}/audit`, {
+            headers: { 'X-API-Key': 'pc-antifraude-local-key-2026' }
+        });
+        if (!response.ok) throw new Error("Status " + response.status);
+        res.json(await response.json());
+    } catch (error) {
+        console.error(`Error en proxy de auditoría de cliente para ${req.params.customer_id}:`, error);
+        res.status(503).json({ error: 'Motor de auditoría de cliente no disponible' });
+    }
+});
+
 // ENVIAR REVISIÓN INDIVIDUAL
 app.patch('/api/alerts/:id/review', async (req, res) => {
     try {
@@ -139,7 +155,6 @@ app.get('/api/stats/summary', async (req, res) => {
     try {
         const headers = { 'X-API-Key': 'pc-antifraude-local-key-2026' };
 
-        // Solicitamos todos los estados concurrentemente
         const [resO, resR, resF, resS, resD, resAR] = await Promise.all([
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=100', { headers }),
             fetch('http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=100', { headers }),
@@ -160,20 +175,15 @@ app.get('/api/stats/summary', async (req, res) => {
         const descartadas = dataD.data || [];
         const enRevisionAdicional = dataAR.data || [];
 
-        // Universos de Datos base para los gráficos de barras
         const activas = [...abiertas, ...enRevision, ...enRevisionAdicional];
         const riesgoCritico = [...sospechosos, ...fraudes];
         const globales = [...abiertas, ...enRevision, ...enRevisionAdicional, ...fraudes, ...sospechosos, ...descartadas];
 
-        // 🚀 FIX MATEMÁTICO SUPREMO: Deduplicación analítica para el "Monto en Riesgo" general del Dashboard
         const txProcesadasDashboard = new Set();
         let dineroRiesgoNeto = 0;
 
         activas.forEach(al => {
-            // 1. Redondeamos el tiempo al minuto exacto para agrupar ráfagas de alertas secuenciales
             const fechaSinSegundos = al.fecha ? new Date(al.fecha).setSeconds(0, 0) : '0';
-
-            // 2. Armamos la llave única basándonos en IDs duros o en la firma [Minuto]_[Monto]
             const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${al.monto}`;
 
             if (!txProcesadasDashboard.has(txKey)) {
@@ -182,11 +192,9 @@ app.get('/api/stats/summary', async (req, res) => {
             }
         });
 
-        // Contadores generales para las tarjetas informativas
         const totalAlertas = dataO.pagination ? dataO.pagination.totalItems : abiertas.length;
         const casosCriticos = dataF.pagination ? dataF.pagination.totalItems : fraudes.length;
 
-        // Función reutilizable para calcular el Top 5 de cualquier universo (mantiene las barras intactas)
         const procesarTop5 = (arreglo) => {
             const conteo = {};
             let total = 0;
@@ -209,7 +217,6 @@ app.get('/api/stats/summary', async (req, res) => {
 
         res.json({
             alertas_abiertas: totalAlertas,
-            // 🚀 Enviamos el monto neto deduplicado con formato financiero estadounidense estándar
             dinero_en_riesgo: dineroRiesgoNeto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             efectividad: totalAlertas > 0 ? (100 - (casosCriticos / (totalAlertas + casosCriticos) * 100)).toFixed(1) + "%" : "100%",
             casos_criticos: casosCriticos,
@@ -233,8 +240,8 @@ app.use((req, res) => {
     if (fs.existsSync(reactAppPath)) {
         res.sendFile(reactAppPath);
     } else {
-        res.send("🚀 Proxy de PowerControl activo. El Frontend aún no se ha fusionado. Para ver la app, entra al puerto de Vite (ej. http://localhost:5173)");
+        res.send("🚀 Proxy de PowerControl activo. El Frontend aún no se ha fusionado.");
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 PowerControl Backend/Proxy en puerto: ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 PowerControl Pasarela/Proxy en puerto: ${PORT}`));

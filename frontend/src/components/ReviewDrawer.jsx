@@ -19,13 +19,18 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
   const [cargando, setCargando] = useState(true);
 
   const [selectedAlertId, setSelectedAlertId] = useState(null);
+  
+  // Estados para el Payload
   const [payloadData, setPayloadData] = useState(null);
   const [cargandoPayload, setCargandoPayload] = useState(false);
+
+  // Bitácora de Auditoría del Cliente Seleccionado
+  const [historial, setHistorial] = useState([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
 
   const [comentario, setComentario] = useState('');
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
 
-  // 🚀 LA REFERENCIA MÁGICA: Le daremos esta brújula al formulario del fondo
   const formDictamenRef = useRef(null);
 
   useEffect(() => {
@@ -42,6 +47,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
       setAlertas([]);
       setSelectedAlertId(null);
       setPayloadData(null);
+      setHistorial([]);
 
       const cleanEntityId = String(entityId).trim();
       const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanEntityId);
@@ -147,6 +153,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     }
   }, [isOpen, entityId, clienteContexto, estadoActual]);
 
+  // EFECTO 1: Descarga de metadatos del evento individual (Payload JSON)
   useEffect(() => {
     if (selectedAlertId) {
       setCargandoPayload(true);
@@ -163,7 +170,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
           setCargandoPayload(false);
         })
         .catch(err => {
-          console.error("Error trayendo payload dinámico:", err);
+          console.error("Error trayendo payload:", err);
           setPayloadData(null);
           setCargandoPayload(false);
         });
@@ -171,6 +178,43 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
       setPayloadData(null);
     }
   }, [selectedAlertId]);
+
+  // EFECTO 2: Carga la auditoría dinámica del cliente seleccionado actualmente
+  useEffect(() => {
+    const alertaActivaEnLista = alertas.find(a => a.alert_id === selectedAlertId);
+
+    let targetCustomerId = payloadData?.customerid || 
+                           payloadData?.customerId || 
+                           payloadData?.customer_id || 
+                           alertaActivaEnLista?.customer_id || 
+                           alertaActivaEnLista?.codigo_entidad;
+    
+    if (!targetCustomerId && info?.id_value) {
+      targetCustomerId = info.id_value;
+    }
+
+    if (targetCustomerId) {
+      setCargandoHistorial(true);
+      
+      fetch(`/api/v1/alerts/customer/${targetCustomerId}/audit`)
+        .then(res => {
+          if (!res.ok) throw new Error("Fallo consultando auditoría del cliente");
+          return res.json();
+        })
+        .then(hData => {
+          const listaEventosUnificada = hData?.data?.data || hData?.data || [];
+          setHistorial(listaEventosUnificada);
+          setCargandoHistorial(false);
+        })
+        .catch(err => {
+          console.error(`Error trayendo historial para cliente ${targetCustomerId}:`, err);
+          setHistorial([]);
+          setCargandoHistorial(false);
+        });
+    } else {
+      setHistorial([]);
+    }
+  }, [selectedAlertId, payloadData, alertas, info?.id_value]);
 
   const alertaActiva = alertas.find(a => a.alert_id === selectedAlertId);
 
@@ -240,7 +284,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
 
   const esSoloLectura = estadoActual === 'DISCARDED';
 
-  // 🚀 NUEVO: Función para el auto-scroll suave
   const scrollToDictamen = () => {
     formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -249,24 +292,17 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     <>
       <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`} onClick={onClose}></div>
 
-        {/* 🚀 MODIFICADO: Agregamos flex y flex-col al contenedor maestro para poder anclar la cabecera */}
         <div className={`fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           
-          {/* ========================================================= */}
-          {/* 🚀 CABECERA INMORTAL (Siempre visible) */}
-          {/* ========================================================= */}
           <div className="flex justify-between items-center border-b p-4 md:p-6 bg-white shrink-0 z-20 shadow-sm">
             <h3 className="text-xl font-bold text-power-blue truncate pr-2">Revisión de Entidad</h3>
             <div className="flex items-center gap-2 md:gap-3 shrink-0">
-              
-              {/* EL BOTÓN TELETRANSPORTADOR */}
               <button 
                 onClick={scrollToDictamen} 
                 className="text-[10px] md:text-xs bg-power-purple/10 text-power-purple px-3 py-1.5 rounded-full font-bold hover:bg-power-purple/20 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-power-purple/20"
               >
                 ⬇️ <span className="hidden sm:inline">Dictamen</span>
               </button>
-              
               <button 
                 onClick={onClose} 
                 className="text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-xl active:scale-90 w-8 h-8 flex items-center justify-center rounded-full transition-colors"
@@ -276,9 +312,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
             </div>
           </div>
 
-          {/* ========================================================= */}
-          {/* 🚀 CUERPO DEL CAJÓN (Esta es la parte que hace scroll) */}
-          {/* ========================================================= */}
           <div className="p-4 md:p-6 overflow-y-auto flex-1 bg-white">
           {cargando ? (
             <p className="text-center py-10 text-gray-400 italic animate-pulse">Cargando expediente de la entidad...</p>
@@ -335,7 +368,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                       </span>
                     </div>
                     <div>
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</span>
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status Actual</span>
                       <span className={`text-[10px] font-bold uppercase px-2 py-1.5 rounded-lg border block shadow-xs truncate ${info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border-red-200' :
                           info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border-gray-200' :
                             info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' :
@@ -347,23 +380,18 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                     </div>
                   </div>
 
-                  {/* TIMELINE DE EVENTOS */}
+                  {/* LISTA DE EVENTOS ACTIVOS */}
                   <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col">
                     <div className="bg-gray-200/50 p-3 border-b border-gray-200 shrink-0">
-                      <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Historial de Eventos ({totalAlertasCargadas})</h4>
+                      <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Eventos Activos ({totalAlertasCargadas})</h4>
                     </div>
                     
                     <div className="max-h-80 overflow-y-auto p-3 space-y-3">
                       {alertas.map((al, idx) => {
                         const estaSeleccionado = selectedAlertId === al.alert_id;
-
-                        const celularDelPayload = payloadData?.telephonenumber ||
-                          payloadData?.phone ||
-                          payloadData?.customer?.phone ||
-                          payloadData?.mobile;
-
+                        const celularDelPayload = payloadData?.telephonenumber || payloadData?.phone || payloadData?.customer?.phone || payloadData?.mobile;
                         const phoneFinal = al.celular || al.telefono || al.phone || al.mobile || rawTelefonoEncontrado || celularDelPayload;
-
+                        
                         let textCelular = '—';
                         let rawPhoneToCopy = '';
 
@@ -381,10 +409,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                         return (
                           <div
                             key={al.alert_id || `alerta-hija-${idx}`}
-                            onClick={() => {
-                              setSelectedAlertId(al.alert_id);
-                              setComentario(al.review_comment || al.comentario || al.comment || '');
-                            }}
+                            onClick={() => setSelectedAlertId(al.alert_id)}
                             className={`cursor-pointer rounded-xl border p-3.5 transition-all ${
                               estaSeleccionado
                                 ? 'bg-power-purple/5 border-power-purple shadow-sm ring-1 ring-power-purple/30'
@@ -392,8 +417,8 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                             }`}
                           >
                              <div className="flex justify-between items-start mb-2">
-                               <div className="flex items-start gap-2.5">
-                                 <div className="mt-0.5 shrink-0">
+                               <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                 <div className="mt-1 shrink-0">
                                    <input
                                      type="radio"
                                      checked={estaSeleccionado}
@@ -401,11 +426,19 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                                      className="h-3.5 w-3.5 text-power-purple focus:ring-power-purple border-gray-300 accent-power-purple cursor-pointer"
                                    />
                                  </div>
-                                 <div>
-                                   <span className="font-mono text-[9px] md:text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 font-bold block w-fit mb-0.5 uppercase tracking-tight" title={al.regla}>
-                                     {al.codigoregla}
-                                   </span>
-                                   <span className="text-[10px] md:text-[11px] text-gray-500 font-medium">
+                                 <div className="min-w-0 flex-1">
+                                   
+                                   {/* 🚀 SOLUCIÓN AL CORTE: El texto ahora baja a la segunda línea si es muy largo */}
+                                   <div className="flex items-start gap-1.5 mb-1">
+                                     <span className="font-mono text-[9px] md:text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 font-bold uppercase tracking-tight shrink-0 mt-0.5">
+                                       {al.codigoregla}
+                                     </span>
+                                     <span className="text-[10px] md:text-[11px] font-black text-slate-700 break-all leading-snug" title={al.regla}>
+                                       {al.regla || 'Alerta de riesgo'}
+                                     </span>
+                                   </div>
+
+                                   <span className="text-[10px] md:text-[11px] text-gray-500 font-medium block">
                                      {new Date(al.fecha).toLocaleString()}
                                    </span>
                                  </div>
@@ -430,44 +463,95 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                                  <span className="font-medium text-gray-700 truncate text-right">{al.cliente}</span>
                                </div>
                              </div>
-
+                             
                              <div className="flex items-center justify-between text-[10px] md:text-[11px] pt-1">
                                 <div className="flex items-center gap-1.5">
                                    <span className="font-bold text-gray-400 uppercase tracking-wider">DNI:</span>
                                    <span className="font-mono font-bold text-gray-600">{al.dni || '—'}</span>
                                    {al.dni && ( 
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          navigator.clipboard.writeText(al.dni);
-                                        }}
-                                        className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 flex items-center justify-center shadow-xs"
-                                        title="Copiar DNI"
-                                      >
-                                        📋
-                                      </button> 
+                                      <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(al.dni); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 flex items-center justify-center shadow-xs" title="Copiar DNI">📋</button> 
                                    )}
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                    <span className="font-bold text-gray-400 uppercase tracking-wider">Telf:</span>
                                    <span className="font-semibold text-gray-600">{textCelular}</span>
                                    {rawPhoneToCopy && ( 
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          navigator.clipboard.writeText(rawPhoneToCopy);
-                                        }}
-                                        className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 flex items-center justify-center shadow-xs"
-                                        title="Copiar número celular"
-                                      >
-                                        📋
-                                      </button> 
+                                      <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(rawPhoneToCopy); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 hover:text-power-purple transition-all active:scale-90 flex items-center justify-center shadow-xs" title="Copiar número celular">📋</button> 
                                    )}
                                 </div>
                              </div>
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  {/* LÍNEA DE TIEMPO DE AUDITORÍA */}
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
+                    <div className="bg-gray-50 p-3 border-b border-gray-200 shrink-0 flex justify-between items-center">
+                      <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Línea de Tiempo del Cliente Seleccionado</h4>
+                      {cargandoHistorial && <span className="text-[9px] text-gray-400 animate-pulse font-bold tracking-widest uppercase">Consultando...</span>}
+                    </div>
+                    
+                    <div className="p-4 max-h-80 overflow-y-auto">
+                      {!cargandoHistorial && historial.length === 0 ? (
+                        <p className="text-center text-xs text-gray-400 italic py-6">Aún no hay revisiones registradas en el historial de este cliente.</p>
+                      ) : (
+                        <div className="relative border-l-2 border-gray-200 ml-2 md:ml-3 space-y-5 pb-2 mt-2">
+                          {historial.map((item, idx) => {
+                            const reviewerLower = String(item.reviewer_id || '').toLowerCase();
+                            const isBot = reviewerLower.includes('bot') || reviewerLower.includes('auto') || reviewerLower.includes('agent') || reviewerLower.includes('sistema');
+                            
+                            return (
+                              <div key={item.audit_id || idx} className="relative pl-5 md:pl-6 group">
+                                <div className={`absolute -left-[11px] md:-left-[13px] top-0 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs border-2 border-white shadow-sm z-10 transition-transform group-hover:scale-110 ${isBot ? 'bg-slate-500 text-white' : 'bg-power-blue text-white'}`}>
+                                  {isBot ? '🤖' : '👤'}
+                                </div>
+
+                                <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow relative top-[-6px]">
+                                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-2 gap-1.5 sm:gap-0">
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[11px] md:text-xs font-black text-gray-800">
+                                          {item.reviewer_id || 'Sistema'}
+                                        </span>
+                                        {isBot && <span className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Automático</span>}
+                                      </div>
+                                      
+                                      {/* 🚀 SOLUCIÓN AL CORTE: Badges de regla en la bitácora permitiendo salto de línea */}
+                                      {(item.codigo_regla || item.regla_nombre) && (
+                                        <span className="text-[9px] text-gray-500 bg-gray-100 font-mono px-1.5 py-0.5 rounded border border-gray-200/50 w-fit whitespace-normal break-all leading-tight" title={item.regla_nombre}>
+                                          {item.codigo_regla ? `[${item.codigo_regla}] ` : ''}{item.regla_nombre || ''}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[9px] md:text-[10px] text-gray-400 font-medium font-mono shrink-0">
+                                      {new Date(item.fecha_comentario).toLocaleString()}
+                                    </span>
+                                  </div>
+
+                                  <div className="mb-2">
+                                    <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border shadow-xs inline-flex items-center gap-1 ${
+                                      item.status === 'FRAUD' ? 'bg-red-50 text-red-600 border-red-200' :
+                                      item.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                      item.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                                      item.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border-purple-200' :
+                                      'bg-blue-50 text-blue-600 border-blue-200'
+                                    }`}>
+                                      <svg className="w-2.5 h-2.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"></path></svg>
+                                      {traducirEstado(item.status)}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[11px] md:text-xs text-gray-600 leading-relaxed bg-slate-50/50 p-2.5 rounded border border-slate-100 whitespace-pre-wrap">
+                                    {item.review_comment || <span className="italic text-gray-400">Sin comentario en este cambio de estado.</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -479,9 +563,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                       </p>
                       {payloadData && !cargandoPayload && (
                         <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(JSON.stringify(payloadData, null, 2));
-                          }}
+                          onClick={() => navigator.clipboard.writeText(JSON.stringify(payloadData, null, 2))}
                           className="text-[9px] font-black text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors active:scale-95"
                         >
                           Copiar JSON
@@ -499,39 +581,28 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                     </pre>
                   </div>
 
-                  {/* ========================================================= */}
-                  {/* 🚀 FORMULARIO DICTAMEN (El destino del scroll) */}
-                  {/* ========================================================= */}
-                  {/* Le pasamos el "formDictamenRef" para que React sepa dónde apuntar */}
+                  {/* FORMULARIO DICTAMEN */}
                   <div ref={formDictamenRef} className="bg-gray-50 p-4 rounded-xl border border-gray-200 scroll-mt-6">
                     <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Global en Lote</h4>
                     <div className="space-y-4">
                       <div>
                         <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
                         <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none">
-
-                          {estadoActual === 'OPEN' && (
-                            <option value="IN_REVIEW">Pasar a En Revisión</option>
-                          )}
-
+                          {estadoActual === 'OPEN' && <option value="IN_REVIEW">Pasar a En Revisión</option>}
                           {estadoActual === 'IN_REVIEW' && (
                             <>
                               <option value="IN_REVIEW">Mantener En Revisión</option>
                               <option value="ADDITIONAL_REVIEW">En revisión adicional</option>
                             </>
                           )}
-
-                          {estadoActual === 'ADDITIONAL_REVIEW' && (
-                            <option value="ADDITIONAL_REVIEW">Mantener En revisión adicional</option>
-                          )}
-
+                          {estadoActual === 'ADDITIONAL_REVIEW' && <option value="ADDITIONAL_REVIEW">Mantener En revisión adicional</option>}
                           <option value="DISCARDED">Descartar Todas (Falso Positivo)</option>
                           <option value="SUSPICIOUS">Sospechoso (Monitorear)</option>
                           <option value="FRAUD">Fraude Confirmado (Bloquear)</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold mb-1">Comentario de Evento Seleccionado</label>
+                        <label className="block text-xs font-bold mb-1">Nuevo Comentario de Revisión</label>
                         <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none" placeholder="Explica el motivo de tu decisión..."></textarea>
                       </div>
                       {!esSoloLectura && (
@@ -549,12 +620,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                   <p className="text-xs text-slate-400 mt-2 text-center">Esto ocurre si la búsqueda no retornó resultados o la alerta fue movida a otra bandeja.</p>
                 </div>
               )}
-
-              <div className="pt-2 text-center pb-4">
-                <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                  Sincronización de Eventos: {alertas.length} registros renderizados
-                </span>
-              </div>
 
             </div>
           )}
