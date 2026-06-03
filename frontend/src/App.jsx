@@ -10,8 +10,8 @@ function App() {
   const [drawerAbierto, setDrawerAbierto] = useState(false);
   const [alertaSeleccionada, setAlertaSeleccionada] = useState(null);
   const [clienteContexto, setClienteContexto] = useState(null);
-
-  // 🚀 NUEVO: Memoria para saber si el menú de celular está abierto o cerrado
+  
+  const [listaActual, setListaActual] = useState([]);
   const [menuAbierto, setMenuAbierto] = useState(false);
 
   const [filtros, setFiltros] = useState({
@@ -25,20 +25,44 @@ function App() {
   const cambiarVistaYLimpiar = (nuevaVista) => {
     setVistaActual(nuevaVista);
     setFiltros({ fechaInicio: '', fechaFin: '', busqueda: '' });
-    // 🚀 NUEVO: Si estamos en celular, cerramos el menú automáticamente al elegir una opción
     setMenuAbierto(false); 
+    // 🚀 LA SOLUCIÓN: El Padre cierra el cajón automáticamente al cambiar de pestaña. ¡Cero bugs!
+    setDrawerAbierto(false); 
   };
 
-  const abrirRevision = (alertId, clientCtx) => {
+  const abrirRevision = (alertId, clientCtx, entidadesDeLaTabla) => {
     setAlertaSeleccionada(alertId);
     setClienteContexto(clientCtx);
+    setListaActual(entidadesDeLaTabla || []); 
     setDrawerAbierto(true);
+  };
+
+  const currentIndex = listaActual.findIndex(e => 
+    (e.id_agrupacion || e.codigo_entidad || e.dni || e.document_number) === alertaSeleccionada
+  );
+
+  const hayAnterior = currentIndex > 0;
+  const haySiguiente = currentIndex >= 0 && currentIndex < listaActual.length - 1;
+
+  const irAnterior = () => {
+    if (hayAnterior) {
+      const prev = listaActual[currentIndex - 1];
+      setAlertaSeleccionada(prev.id_agrupacion || prev.codigo_entidad || prev.dni || prev.document_number);
+      setClienteContexto(prev.cliente || prev.full_name || prev.dni || prev.document_number);
+    }
+  };
+
+  const irSiguiente = () => {
+    if (haySiguiente) {
+      const next = listaActual[currentIndex + 1];
+      setAlertaSeleccionada(next.id_agrupacion || next.codigo_entidad || next.dni || next.document_number);
+      setClienteContexto(next.cliente || next.full_name || next.dni || next.document_number);
+    }
   };
 
   return (
     <div className="bg-bg-app text-gray-800 font-sans antialiased h-screen flex overflow-hidden relative">
 
-      {/* 🚀 NUEVO: Cortina oscura (Overlay) que aparece detrás del menú en celulares */}
       {menuAbierto && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity"
@@ -46,16 +70,12 @@ function App() {
         />
       )}
 
-      {/* 🚀 NUEVO: Envolvemos el Sidebar. 
-          En celular (por defecto): absolute, z-50, fuera de la pantalla (-translate-x-full).
-          En PC (md:): relativo, sin animaciones de entrada, siempre visible (translate-x-0). */}
       <div className={`fixed inset-y-0 left-0 z-50 transform ${menuAbierto ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out flex`}>
         <Sidebar vistaActual={vistaActual} setVistaActual={cambiarVistaYLimpiar} />
       </div>
 
       <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-50 w-full">
         
-        {/* 🚀 Le pasamos al Header la llave para abrir el menú (onToggleMenu) */}
         <Header 
           vistaActual={vistaActual} 
           filtros={filtros} 
@@ -69,7 +89,7 @@ function App() {
           ) : (
             <AlertsTable
               vistaActual={vistaActual}
-              onAbrirRevision={abrirRevision}
+              onAbrirRevision={abrirRevision} 
               filtros={filtros}
               refreshTrigger={refreshTrigger}
             />
@@ -84,6 +104,10 @@ function App() {
         clienteContexto={clienteContexto}
         estadoActual={vistaActual}
         recargarTabla={() => setRefreshTrigger(prev => prev + 1)}
+        onAnterior={irAnterior}
+        onSiguiente={irSiguiente}
+        hayAnterior={hayAnterior}
+        haySiguiente={haySiguiente}
       />
     </div>
   )

@@ -12,7 +12,6 @@ const traducirEstado = (estado) => {
   return diccionario[estado?.toUpperCase()] || estado || '—';
 };
 
-// 🚀 TUS PLANTILLAS RÁPIDAS (AHORA CON "EN INVESTIGACIÓN")
 const RESPUESTAS_RAPIDAS = [
   "CLIENTE PASO BIOMETRIA PREVIAMENTE",
   "COINCIDE MOVIL CON TITULAR - YAPE",
@@ -20,19 +19,27 @@ const RESPUESTAS_RAPIDAS = [
   "EN INVESTIGACIÓN"
 ];
 
-const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, estadoActual, recargarTabla }) => {
+// 🚀 NUEVOS PROPS: onAnterior, onSiguiente, hayAnterior, haySiguiente
+const ReviewDrawer = ({ 
+  isOpen, 
+  onClose, 
+  alertId: entityId, 
+  clienteContexto, 
+  estadoActual, 
+  recargarTabla,
+  onAnterior,
+  onSiguiente,
+  hayAnterior = false,
+  haySiguiente = false
+}) => {
   const [info, setInfo] = useState(null);
   const [alertas, setAlertas] = useState([]);
   const [rawResponse, setRawResponse] = useState(null);
   const [cargando, setCargando] = useState(true);
 
   const [selectedAlertId, setSelectedAlertId] = useState(null);
-  
-  // Estados para el Payload
   const [payloadData, setPayloadData] = useState(null);
   const [cargandoPayload, setCargandoPayload] = useState(false);
-
-  // Bitácora de Auditoría del Cliente Seleccionado
   const [historial, setHistorial] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
 
@@ -40,6 +47,22 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
 
   const formDictamenRef = useRef(null);
+
+  // 🚀 LÓGICA DE AUTO-CIERRE: Si cambiamos de bandeja, el cajón se cierra solo
+  const [estadoInicial, setEstadoInicial] = useState(estadoActual);
+
+  useEffect(() => {
+    if (isOpen) {
+      setEstadoInicial(estadoActual);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && estadoActual !== estadoInicial) {
+      onClose();
+    }
+  }, [estadoActual, isOpen, estadoInicial, onClose]);
+
 
   useEffect(() => {
     if (isOpen) {
@@ -276,7 +299,12 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
       });
 
       if (res.ok) {
-        onClose();
+        // 🚀 Si guardamos y hay siguiente, saltamos al siguiente. Si no, cerramos.
+        if (haySiguiente && onSiguiente) {
+          onSiguiente();
+        } else {
+          onClose();
+        }
         setTimeout(() => {
           recargarTabla();
         }, 800);
@@ -304,42 +332,81 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
 
         <div className={`fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           
-          <div className="flex justify-between items-center border-b p-4 md:p-6 bg-white shrink-0 z-20 shadow-sm">
+          <div className="flex justify-between items-center border-b p-3 md:p-5 bg-white shrink-0 z-20 shadow-sm">
             <h3 className="text-xl font-bold text-power-blue truncate pr-2">Revisión de Entidad</h3>
-            <div className="flex items-center gap-2 md:gap-3 shrink-0">
+            
+            <div className="flex items-center gap-1 md:gap-2 shrink-0">
+              
+              {/* 🚀 BOTONES DE NAVEGACIÓN ANTERIOR / SIGUIENTE */}
+              <div className="flex bg-gray-50 rounded-lg p-0.5 border border-gray-200 mr-1 md:mr-2 shadow-sm">
+                <button 
+                  onClick={onAnterior}
+                  disabled={!hayAnterior}
+                  className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95"
+                  title="Caso Anterior"
+                >
+                  <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <div className="w-[1px] bg-gray-200 my-1 mx-0.5"></div>
+                <button 
+                  onClick={onSiguiente}
+                  disabled={!haySiguiente}
+                  className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95"
+                  title="Caso Siguiente"
+                >
+                  <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+              </div>
+
               <button 
                 onClick={scrollToDictamen} 
                 className="text-[10px] md:text-xs bg-power-purple/10 text-power-purple px-3 py-1.5 rounded-full font-bold hover:bg-power-purple/20 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-power-purple/20"
               >
                 ⬇️ <span className="hidden sm:inline">Dictamen</span>
               </button>
+              
               <button 
                 onClick={onClose} 
-                className="text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-xl active:scale-90 w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                className="text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-xl active:scale-90 w-8 h-8 flex items-center justify-center rounded-full transition-colors ml-1"
               >
                 ✕
               </button>
             </div>
           </div>
 
-          <div className="p-4 md:p-6 overflow-y-auto flex-1 bg-white">
+          <div className="p-4 md:p-6 overflow-y-auto flex-1 bg-slate-50">
           {cargando ? (
-            <p className="text-center py-10 text-gray-400 italic animate-pulse">Cargando expediente de la entidad...</p>
+            <div className="flex flex-col items-center justify-center h-full space-y-4">
+               <div className="w-10 h-10 border-4 border-power-purple/30 border-t-power-purple rounded-full animate-spin"></div>
+               <p className="text-gray-400 italic font-medium animate-pulse">Cargando expediente de la entidad...</p>
+            </div>
           ) : (
             <div className="space-y-6">
 
               {info ? (
                 <>
                   {/* Resumen Card */}
-                  <div className="bg-power-purple/5 rounded-xl p-4 border border-power-purple/20 grid grid-cols-2 gap-4 shadow-sm text-sm">
-                    <div className="col-span-2 border-b border-gray-200 pb-2 mb-2">
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
-                      <p className="text-lg font-black text-gray-800 leading-tight">{info.display_name}</p>
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 grid grid-cols-2 gap-4 shadow-sm text-sm">
+                    <div className="col-span-2 border-b border-gray-100 pb-2 mb-2 flex items-start justify-between">
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
+                        <p className="text-lg font-black text-gray-800 leading-tight">{info.display_name}</p>
+                      </div>
+                      {/* Badge visual del estado para rápida lectura */}
+                      <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded shadow-xs ml-2 shrink-0 ${
+                          info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border border-red-200' :
+                          info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
+                          info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                          info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border border-purple-200' :
+                          'bg-blue-50 text-blue-600 border border-blue-200'
+                        }`}>
+                        {traducirEstado(info.status)}
+                      </span>
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase font-bold">{info.id_label}</p>
                       <div className="flex items-center space-x-2 mt-0.5">
-                        <p className="font-bold text-slate-700 font-mono text-xs bg-white px-2 py-1 rounded-md border border-slate-200/60 truncate max-w-[120px] md:max-w-[140px]" title={info.id_value}>
+                        <p className="font-bold text-slate-700 font-mono text-xs bg-slate-50 px-2 py-1 rounded-md border border-slate-200 truncate max-w-[120px] md:max-w-[140px]" title={info.id_value}>
                           {info.id_value}
                         </p>
                         <button
@@ -358,41 +425,30 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                   </div>
 
                   {/* Grid de Auditoría Adaptable */}
-                  <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/60 shadow-sm text-center">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
                     <div>
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">1° Compra</span>
-                      <span className="text-[11px] font-semibold text-slate-800 bg-white px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_primera ? new Date(info.fecha_primera).toLocaleString() : '—'}>
+                      <span className="text-[11px] font-semibold text-slate-800 bg-slate-50 px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_primera ? new Date(info.fecha_primera).toLocaleString() : '—'}>
                         {info.fecha_primera ? new Date(info.fecha_primera).toLocaleDateString() : '—'}
                       </span>
                     </div>
                     <div>
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Última Compra</span>
-                      <span className="text-[11px] font-semibold text-slate-800 bg-white px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_ultima ? new Date(info.fecha_ultima).toLocaleString() : '—'}>
+                      <span className="text-[11px] font-semibold text-slate-800 bg-slate-50 px-1 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate" title={info.fecha_ultima ? new Date(info.fecha_ultima).toLocaleString() : '—'}>
                         {info.fecha_ultima ? new Date(info.fecha_ultima).toLocaleDateString() : '—'}
                       </span>
                     </div>
-                    <div>
+                    <div className="col-span-2 md:col-span-1">
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tipo Entidad</span>
-                      <span className="text-[11px] font-semibold text-slate-800 bg-white px-2 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate uppercase">
+                      <span className="text-[11px] font-semibold text-slate-800 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate uppercase">
                         {info.entidad_nombre}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status Actual</span>
-                      <span className={`text-[10px] font-bold uppercase px-2 py-1.5 rounded-lg border block shadow-xs truncate ${info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border-red-200' :
-                          info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border-gray-200' :
-                            info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                              info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border-purple-200' :
-                                'bg-blue-50 text-blue-600 border-blue-200'
-                        }`}>
-                        {traducirEstado(info.status)}
                       </span>
                     </div>
                   </div>
 
                   {/* LISTA DE EVENTOS ACTIVOS */}
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col">
-                    <div className="bg-gray-200/50 p-3 border-b border-gray-200 shrink-0">
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
+                    <div className="bg-slate-50 p-3 border-b border-gray-200 shrink-0">
                       <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Historial de Alertas ({totalAlertasCargadas})</h4>
                     </div>
                     
@@ -461,7 +517,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                                </div>
                              </div>
 
-                             <div className="mb-2 bg-gray-50/80 rounded-lg p-2 md:p-2.5 border border-gray-100 text-[10px] md:text-[11px] space-y-1">
+                             <div className="mb-2 bg-slate-50/80 rounded-lg p-2 md:p-2.5 border border-slate-100 text-[10px] md:text-[11px] space-y-1">
                                <div className="flex justify-between items-center">
                                  <span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Comercio:</span>
                                  <span className="font-medium text-gray-700 truncate text-right">{nombreComercio}</span>
@@ -496,7 +552,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
 
                   {/* LÍNEA DE TIEMPO DE AUDITORÍA */}
                   <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
-                    <div className="bg-gray-50 p-3 border-b border-gray-200 shrink-0 flex justify-between items-center">
+                    <div className="bg-slate-50 p-3 border-b border-gray-200 shrink-0 flex justify-between items-center">
                       <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Línea de Tiempo del Cliente Seleccionado</h4>
                       {cargandoHistorial && <span className="text-[9px] text-gray-400 animate-pulse font-bold tracking-widest uppercase">Consultando...</span>}
                     </div>
@@ -593,7 +649,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                   </div>
 
                   {/* FORMULARIO DICTAMEN */}
-                  <div ref={formDictamenRef} className="bg-gray-50 p-4 rounded-xl border border-gray-200 scroll-mt-6">
+                  <div ref={formDictamenRef} className="bg-white p-4 rounded-xl border border-gray-200 scroll-mt-6 shadow-sm">
                     <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Global en Lote</h4>
                     <div className="space-y-4">
                       <div>
@@ -623,7 +679,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                                 key={i}
                                 type="button"
                                 onClick={() => agregarRespuestaRapida(frase)}
-                                className="text-[10px] md:text-[11px] bg-white border border-power-purple/30 text-power-purple hover:bg-power-purple hover:text-white px-2.5 py-1.5 rounded-md transition-colors active:scale-95 font-medium shadow-sm"
+                                className="text-[10px] md:text-[11px] bg-slate-50 border border-power-purple/20 text-power-purple hover:bg-power-purple hover:text-white px-2.5 py-1.5 rounded-md transition-colors active:scale-95 font-medium shadow-xs"
                               >
                                 {frase}
                               </button>
@@ -643,7 +699,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                   </div>
                 </>
               ) : (
-                <div className="flex flex-col items-center justify-center py-20 px-6 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
+                <div className="flex flex-col items-center justify-center py-20 px-6 bg-white rounded-xl border border-gray-200 border-dashed">
                   <span className="text-4xl mb-4">📭</span>
                   <p className="text-slate-500 font-bold text-center">No se encontraron alertas activas en estado <span className="text-power-purple">{traducirEstado(estadoActual)}</span>.</p>
                   <p className="text-xs text-slate-400 mt-2 text-center">Esto ocurre si la búsqueda no retornó resultados o la alerta fue movida a otra bandeja.</p>

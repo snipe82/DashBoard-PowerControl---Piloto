@@ -325,7 +325,8 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                           disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                           onClick={() => onAbrirRevision(
                             idEntidadFinal, 
-                            entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name
+                            entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name,
+                            entidades // 🚀 AQUÍ LE INYECTAMOS LA LISTA COMPLETA AL PADRE
                           )}
                         >
                           {idEntidadFinal && idEntidadFinal !== 'ID_ERROR' ? 'Revisar Entidad' : 'ID Inválido'}
@@ -399,7 +400,8 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                         disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                         onClick={() => onAbrirRevision(
                           idEntidadFinal, 
-                          entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name
+                          entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name,
+                          entidades // 🚀 AQUÍ LE INYECTAMOS LA LISTA COMPLETA AL PADRE EN MÓVIL
                         )}
                       >
                         {idEntidadFinal && idEntidadFinal !== 'ID_ERROR' ? 'Revisar' : 'Inválido'}
