@@ -12,6 +12,14 @@ const traducirEstado = (estado) => {
   return diccionario[estado?.toUpperCase()] || estado || '—';
 };
 
+// 🚀 TUS PLANTILLAS RÁPIDAS (AHORA CON "EN INVESTIGACIÓN")
+const RESPUESTAS_RAPIDAS = [
+  "CLIENTE PASO BIOMETRIA PREVIAMENTE",
+  "COINCIDE MOVIL CON TITULAR - YAPE",
+  "COINCIDE MOVIL CON TITULAR - PLIN",
+  "EN INVESTIGACIÓN"
+];
+
 const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, estadoActual, recargarTabla }) => {
   const [info, setInfo] = useState(null);
   const [alertas, setAlertas] = useState([]);
@@ -153,7 +161,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     }
   }, [isOpen, entityId, clienteContexto, estadoActual]);
 
-  // EFECTO 1: Descarga de metadatos del evento individual (Payload JSON)
   useEffect(() => {
     if (selectedAlertId) {
       setCargandoPayload(true);
@@ -179,7 +186,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     }
   }, [selectedAlertId]);
 
-  // EFECTO 2: Carga la auditoría dinámica del cliente seleccionado actualmente
   useEffect(() => {
     const alertaActivaEnLista = alertas.find(a => a.alert_id === selectedAlertId);
 
@@ -288,6 +294,10 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
     formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const agregarRespuestaRapida = (frase) => {
+    setComentario(prev => prev ? `${prev} - ${frase}` : frase);
+  };
+
   return (
     <>
       <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`} onClick={onClose}></div>
@@ -383,7 +393,7 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                   {/* LISTA DE EVENTOS ACTIVOS */}
                   <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden flex flex-col">
                     <div className="bg-gray-200/50 p-3 border-b border-gray-200 shrink-0">
-                      <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Eventos Activos ({totalAlertasCargadas})</h4>
+                      <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Historial de Alertas ({totalAlertasCargadas})</h4>
                     </div>
                     
                     <div className="max-h-80 overflow-y-auto p-3 space-y-3">
@@ -427,8 +437,6 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                                    />
                                  </div>
                                  <div className="min-w-0 flex-1">
-                                   
-                                   {/* 🚀 SOLUCIÓN AL CORTE: El texto ahora baja a la segunda línea si es muy largo */}
                                    <div className="flex items-start gap-1.5 mb-1">
                                      <span className="font-mono text-[9px] md:text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 font-bold uppercase tracking-tight shrink-0 mt-0.5">
                                        {al.codigoregla}
@@ -518,10 +526,13 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                                         {isBot && <span className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Automático</span>}
                                       </div>
                                       
-                                      {/* 🚀 SOLUCIÓN AL CORTE: Badges de regla en la bitácora permitiendo salto de línea */}
-                                      {(item.codigo_regla || item.regla_nombre) && (
+                                      {(item.codigo_regla || item.regla_nombre) ? (
                                         <span className="text-[9px] text-gray-500 bg-gray-100 font-mono px-1.5 py-0.5 rounded border border-gray-200/50 w-fit whitespace-normal break-all leading-tight" title={item.regla_nombre}>
                                           {item.codigo_regla ? `[${item.codigo_regla}] ` : ''}{item.regla_nombre || ''}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] text-indigo-600 bg-indigo-50 font-bold px-1.5 py-0.5 rounded border border-indigo-200/50 w-fit uppercase tracking-tight flex items-center gap-1" title="Impacto masivo en todas las alertas del cliente">
+                                          <span className="text-[10px]">🌐</span> Acción a Nivel Cliente
                                         </span>
                                       )}
                                     </div>
@@ -601,10 +612,28 @@ const ReviewDrawer = ({ isOpen, onClose, alertId: entityId, clienteContexto, est
                           <option value="FRAUD">Fraude Confirmado (Bloquear)</option>
                         </select>
                       </div>
+                      
                       <div>
-                        <label className="block text-xs font-bold mb-1">Nuevo Comentario de Revisión</label>
-                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none" placeholder="Explica el motivo de tu decisión..."></textarea>
+                        <label className="block text-xs font-bold mb-1.5">Nuevo Comentario de Revisión</label>
+                        
+                        {!esSoloLectura && (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {RESPUESTAS_RAPIDAS.map((frase, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => agregarRespuestaRapida(frase)}
+                                className="text-[10px] md:text-[11px] bg-white border border-power-purple/30 text-power-purple hover:bg-power-purple hover:text-white px-2.5 py-1.5 rounded-md transition-colors active:scale-95 font-medium shadow-sm"
+                              >
+                                {frase}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none" placeholder="Explica el motivo de tu decisión o usa un botón de arriba..."></textarea>
                       </div>
+
                       {!esSoloLectura && (
                         <button onClick={guardarRevisionMasiva} className="w-full bg-power-purple text-white font-bold py-3 rounded-lg shadow-md hover:bg-power-purple/80 transition-all active:scale-95 text-sm md:text-base">
                           Guardar y Resolver {cantidadAlertasCliente} Alertas de Cliente

@@ -41,12 +41,9 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
   const isTooHigh = idx < 6;
 
   return (
-    // 🚀 ADAPTACIÓN MÓVIL: Le quitamos el "hidden" y lo hacemos responsive (w-[280px] a w-[480px]). 
-    // En celular se pega a la derecha (right-0), en PC se centra (md:left-1/2).
     <div className={`absolute z-50 right-0 md:right-auto md:left-1/2 md:-translate-x-1/2 w-[280px] sm:w-[320px] md:w-[480px] bg-slate-900 text-white rounded-xl shadow-2xl p-4 md:p-5 border border-slate-700 transition-opacity duration-200 animate-fade-in ${
       isTooHigh ? 'top-full mt-3' : 'bottom-full mb-3'
     }`}>
-      {/* Flechita del globo (alineada a la derecha en celular, centrada en PC) */}
       <div className={`absolute right-6 md:right-auto md:left-1/2 md:-translate-x-1/2 border-[6px] border-transparent ${
         isTooHigh ? 'bottom-full border-b-slate-900' : 'top-full border-t-slate-900'
       }`}></div>
@@ -303,7 +300,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </td>
 
                       <td className={`px-6 py-4 text-center relative ${isHovered ? 'z-50' : 'z-0'}`}>
-                        {/* 🚀 ADAPTACIÓN: Agregamos onClick para que también se pueda abrir al tocar (pantallas táctiles grandes) */}
                         <div 
                           onMouseEnter={() => setHoveredEntityId(idEntidadFinal)}
                           onMouseLeave={() => setHoveredEntityId(null)}
@@ -359,18 +355,16 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                 return (
                   <div key={idEntidadFinal || `card-${idx}`} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
                     
-                    {/* Fila Superior: Fecha y Badge de Alertas (CON TOOLTIP INCORPORADO) */}
+                    {/* Fila Superior */}
                     <div className="flex justify-between items-start mb-3">
                       <span className="text-xs text-gray-500">
                         {fechaRaw ? new Date(fechaRaw).toLocaleString() : '—'}
                       </span>
                       
-                      {/* 🚀 EL CONTENEDOR DEL TOOLTIP EN MÓVIL */}
                       <div 
                         className={`relative ${isHovered ? 'z-50' : 'z-0'}`}
                         onMouseEnter={() => setHoveredEntityId(idEntidadFinal)}
                         onMouseLeave={() => setHoveredEntityId(null)}
-                        // En móvil, tocar abre o cierra el tooltip
                         onClick={() => setHoveredEntityId(hoveredEntityId === idEntidadFinal ? null : idEntidadFinal)}
                       >
                         <span className="bg-red-100 text-red-600 px-2.5 py-1 rounded-md text-[10px] font-bold border border-red-200 shadow-sm cursor-pointer block">
@@ -382,7 +376,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </div>
                     </div>
 
-                    {/* Centro: Nombre del Cliente y Riesgo */}
+                    {/* Centro */}
                     <div className="mb-4">
                       <h3 className="font-bold text-gray-800 text-base leading-tight">
                         {entidad.cliente || entidad.full_name || 'Cliente no registrado'}
@@ -392,7 +386,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </p>
                     </div>
 
-                    {/* Fila Inferior: Monto y Botón */}
+                    {/* Fila Inferior */}
                     <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
                       <div>
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Riesgo Total</p>
@@ -418,7 +412,9 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           </div>
         </div>
 
-        {/* Paginación Adaptativa */}
+        {/* ==================================================================================== */}
+        {/* 🚀 PAGINACIÓN REPOTENCIADA: "Primera" (<<) y "Última" (>>) añadidas y adaptables */}
+        {/* ==================================================================================== */}
         {!cargando && paginacionInfo && (
           <div className="bg-white border-t border-gray-100 p-3 md:p-4 flex flex-col md:flex-row items-center justify-between shrink-0 gap-3 md:gap-0">
             <p className="text-xs text-gray-500 text-center md:text-left">
@@ -426,19 +422,56 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
               <span className="ml-1 text-gray-400 hidden sm:inline">({paginacionInfo.totalItems} agrupaciones)</span>
             </p>
             
-            <div className="flex items-center space-x-2 w-full md:w-auto justify-between md:justify-end">
-              <button onClick={() => setPaginaActual(p => Math.max(1, p - 1))} disabled={paginacionInfo.currentPage === 1} className="px-3 md:px-4 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform">
+            <div className="flex items-center space-x-1.5 md:space-x-2 w-full md:w-auto justify-between md:justify-end">
+              
+              {/* 🚀 Botón: Primera Página */}
+              <button 
+                onClick={() => setPaginaActual(1)} 
+                disabled={paginacionInfo.currentPage === 1} 
+                className="px-2 md:px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform"
+                title="Primera página"
+              >
+                «
+              </button>
+
+              <button 
+                onClick={() => setPaginaActual(p => Math.max(1, p - 1))} 
+                disabled={paginacionInfo.currentPage === 1} 
+                className="px-3 md:px-4 py-2 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform"
+              >
                 Anterior
               </button>
               
               <div className="flex items-center space-x-1.5 bg-gray-50 border border-gray-200 px-2 py-1 rounded-lg shadow-sm">
                 <span className="text-[10px] text-gray-400 uppercase font-medium hidden sm:inline">Ir a:</span>
-                <input type="text" value={inputPagina} onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} onBlur={procesarSaltoPagina} className="w-8 md:w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-power-purple" />
+                <input 
+                  type="text" 
+                  value={inputPagina} 
+                  onChange={(e) => setInputPagina(e.target.value.replace(/\D/g, ''))} 
+                  onKeyDown={(e) => e.key === 'Enter' && procesarSaltoPagina()} 
+                  onBlur={procesarSaltoPagina} 
+                  className="w-8 md:w-10 text-center font-bold text-xs border border-gray-200 rounded p-1 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-power-purple" 
+                />
               </div>
 
-              <button onClick={() => setPaginaActual(p => p + 1)} disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} className="px-3 md:px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform">
+              <button 
+                onClick={() => setPaginaActual(p => p + 1)} 
+                disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} 
+                className="px-3 md:px-4 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform"
+              >
                 Siguiente
               </button>
+
+              {/* 🚀 Botón: Última Página */}
+              <button 
+                onClick={() => setPaginaActual(paginacionInfo.totalPages)} 
+                disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} 
+                className="px-2 md:px-3 py-2 text-xs font-bold text-power-blue bg-white border border-power-blue/20 rounded-lg shadow-sm disabled:opacity-50 active:scale-95 transition-transform"
+                title="Última página"
+              >
+                »
+              </button>
+
             </div>
           </div>
         )}
