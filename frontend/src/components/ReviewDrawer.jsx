@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import api from '../api'; // 🚀 Motor seguro con interceptor JWT
 
 const traducirEstado = (estado) => {
   const diccionario = {
@@ -19,7 +20,6 @@ const RESPUESTAS_RAPIDAS = [
   "EN INVESTIGACIÓN"
 ];
 
-// 🚀 NUEVOS PROPS: onAnterior, onSiguiente, hayAnterior, haySiguiente
 const ReviewDrawer = ({ 
   isOpen, 
   onClose, 
@@ -48,7 +48,7 @@ const ReviewDrawer = ({
 
   const formDictamenRef = useRef(null);
 
-  // 🚀 LÓGICA DE AUTO-CIERRE: Si cambiamos de bandeja, el cajón se cierra solo
+  // LÓGICA DE AUTO-CIERRE: Si cambiamos de bandeja, el cajón se cierra solo
   const [estadoInicial, setEstadoInicial] = useState(estadoActual);
 
   useEffect(() => {
@@ -88,12 +88,9 @@ const ReviewDrawer = ({
         urlEndpoint = `/api/alerts/dni/${cleanEntityId}?status=${estadoActual}`;
       }
 
-      fetch(urlEndpoint)
+      api.get(urlEndpoint)
         .then(res => {
-          if (!res.ok) throw new Error(`Error en el servidor: Código ${res.status}`);
-          return res.json();
-        })
-        .then(resJson => {
+          const resJson = res.data;
           setRawResponse(resJson);
 
           let rawAlerts = [];
@@ -187,12 +184,9 @@ const ReviewDrawer = ({
   useEffect(() => {
     if (selectedAlertId) {
       setCargandoPayload(true);
-      fetch(`/api/alerts/${selectedAlertId}/payload`)
+      api.get(`/api/alerts/${selectedAlertId}/payload`)
         .then(res => {
-          if (!res.ok) throw new Error("No se pudo descargar el payload");
-          return res.json();
-        })
-        .then(pData => {
+          const pData = res.data;
           setPayloadData(pData);
           if (pData?.review_comment || pData?.comentario || pData?.comment) {
             setComentario(pData.review_comment || pData.comentario || pData.comment);
@@ -224,13 +218,9 @@ const ReviewDrawer = ({
 
     if (targetCustomerId) {
       setCargandoHistorial(true);
-      
-      fetch(`/api/v1/alerts/customer/${targetCustomerId}/audit`)
+      api.get(`/api/v1/alerts/customer/${targetCustomerId}/audit`)
         .then(res => {
-          if (!res.ok) throw new Error("Fallo consultando auditoría del cliente");
-          return res.json();
-        })
-        .then(hData => {
+          const hData = res.data;
           const listaEventosUnificada = hData?.data?.data || hData?.data || [];
           setHistorial(listaEventosUnificada);
           setCargandoHistorial(false);
@@ -259,6 +249,7 @@ const ReviewDrawer = ({
     ? (telefonoNativoEnLista.celular || telefonoNativoEnLista.telefono || telefonoNativoEnLista.phone || telefonoNativoEnLista.mobile)
     : '';
 
+  // 🚀 CONEXIÓN ATÓMICA CON LA AUDITORÍA DE USUARIOS INTERNOS
   const guardarRevisionMasiva = async () => {
     if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
     if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
@@ -282,9 +273,13 @@ const ReviewDrawer = ({
       ? `/api/alerts/entity/${cleanIdParaRuta}/review`
       : `/api/alerts/dni/${cleanIdParaRuta}/review`;
 
+    // 🚀 EXTRACCIÓN DINÁMICA DE LA SESIÓN ACTIVA (Sincronizado con LoginView)
+    const userSession = JSON.parse(localStorage.getItem('user') || '{}');
+    const analistaResponsable = userSession.email || userSession.username || "analista@powerpay.pe";
+
     const body = {
       status: nuevoEstado,
-      reviewer_id: "analista@powerpay.pe",
+      reviewer_id: analistaResponsable, // 👈 Enviado dinámicamente al backend
       review_comment: comentario,
       entity_parent_id: String(entityId).trim(),
       target_dni: alertaActiva.dni || alertaActiva.document_number || null,
@@ -292,14 +287,9 @@ const ReviewDrawer = ({
     };
 
     try {
-      const res = await fetch(reviewUrl, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+      const res = await api.patch(reviewUrl, body);
 
-      if (res.ok) {
-        // 🚀 Si guardamos y hay siguiente, saltamos al siguiente. Si no, cerramos.
+      if (res.status === 200 || res.status === 201) {
         if (haySiguiente && onSiguiente) {
           onSiguiente();
         } else {
@@ -308,11 +298,9 @@ const ReviewDrawer = ({
         setTimeout(() => {
           recargarTabla();
         }, 800);
-      } else {
-        alert(`Hubo un problema al procesar la solicitud en el servidor. Código: ${res.status}`);
       }
     } catch (e) {
-      alert("Error de red al intentar guardar la revisión.");
+      alert(e.response?.data?.message || "Error de red al intentar guardar la revisión.");
     }
   };
 
@@ -336,8 +324,6 @@ const ReviewDrawer = ({
             <h3 className="text-xl font-bold text-power-blue truncate pr-2">Revisión de Entidad</h3>
             
             <div className="flex items-center gap-1 md:gap-2 shrink-0">
-              
-              {/* 🚀 BOTONES DE NAVEGACIÓN ANTERIOR / SIGUIENTE */}
               <div className="flex bg-gray-50 rounded-lg p-0.5 border border-gray-200 mr-1 md:mr-2 shadow-sm">
                 <button 
                   onClick={onAnterior}
@@ -392,7 +378,6 @@ const ReviewDrawer = ({
                         <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
                         <p className="text-lg font-black text-gray-800 leading-tight">{info.display_name}</p>
                       </div>
-                      {/* Badge visual del estado para rápida lectura */}
                       <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded shadow-xs ml-2 shrink-0 ${
                           info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border border-red-200' :
                           info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
@@ -424,7 +409,7 @@ const ReviewDrawer = ({
                     </div>
                   </div>
 
-                  {/* Grid de Auditoría Adaptable */}
+                  {/* Grid de Auditoría */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-white rounded-xl border border-gray-200 shadow-sm text-center">
                     <div>
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">1° Compra</span>
@@ -446,7 +431,7 @@ const ReviewDrawer = ({
                     </div>
                   </div>
 
-                  {/* LISTA DE EVENTOS ACTIVOS */}
+                  {/* HISTORIAL DE ALERTAS */}
                   <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
                     <div className="bg-slate-50 p-3 border-b border-gray-200 shrink-0">
                       <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Historial de Alertas ({totalAlertasCargadas})</h4>
@@ -501,7 +486,6 @@ const ReviewDrawer = ({
                                        {al.regla || 'Alerta de riesgo'}
                                      </span>
                                    </div>
-
                                    <span className="text-[10px] md:text-[11px] text-gray-500 font-medium block">
                                      {new Date(al.fecha).toLocaleString()}
                                    </span>
@@ -622,7 +606,7 @@ const ReviewDrawer = ({
                     </div>
                   </div>
 
-                  {/* Visor de JSON */}
+                  {/* VISOR DE JSON */}
                   <div className="bg-slate-900 rounded-xl p-4 shadow-inner border border-slate-800">
                     <div className="flex justify-between items-center mb-2">
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
