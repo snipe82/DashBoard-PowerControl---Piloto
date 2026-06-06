@@ -148,9 +148,11 @@ app.get('/api/stats/summary', async (req, res) => {
                 const r = await fetch(url, { headers });
                 if (!r.ok) return [];
                 const d = await r.json();
-                return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+                if (Array.isArray(d)) return d;
+                if (Array.isArray(d?.data)) return d.data;
+                if (Array.isArray(d?.data?.data)) return d.data.data;
+                return [];
             } catch (err) {
-                console.error(`⚠️ Timeout o micro-corte evitado en: ${url.split('status=')[1]}`);
                 return []; 
             }
         };
@@ -202,12 +204,25 @@ app.get('/api/stats/summary', async (req, res) => {
             }
         });
 
+        // 🚀 RESOLUCIÓN DE ENTIDAD BLINDADA: Siempre el documento de identidad primero
+        const resolveEntityId = (item) => {
+            if (!item) return Math.random().toString();
+            let id = item.dni || item.document_number || item.documentNumber || item.nro_documento || item.numero_documento;
+            if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
+            
+            id = item.codigo_entidad || item.customer_id || item.customerId || item.merchant_id || item.entity_id;
+            if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
+            
+            id = item.cliente || item.full_name || item.fullName || item.merchant_name || item.nombre;
+            if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
+            
+            id = item.alert_id || item.id_transaccion || item.payment_id;
+            return id ? String(id).trim().toUpperCase() : Math.random().toString();
+        };
+
         const countUniqueClients = (arr) => {
             const uniqueClients = new Set();
-            arr.forEach(al => {
-                const id = al.customer_id || al.customerId || al.codigo_entidad || al.dni || al.document_number || al.cliente || al.alert_id;
-                if (id) uniqueClients.add(id);
-            });
+            arr.forEach(al => uniqueClients.add(resolveEntityId(al)));
             return uniqueClients.size;
         };
 
@@ -216,16 +231,13 @@ app.get('/api/stats/summary', async (req, res) => {
         const casosEnRevision = countUniqueClients([...enRevision, ...enRevisionAdicional]);
         const casosRevisados = countUniqueClients([...fraudes, ...sospechosos, ...descartadas]);
 
-        // 🚀 NUEVA LÓGICA: Calcula el TOP 10 general
         const procesarTop10 = (arreglo) => {
             const conteo = {};
             let totalValidas = 0;
             const uniqueClientsPanel = new Set();
 
             arreglo.forEach(al => {
-                const id = al.customer_id || al.customerId || al.codigo_entidad || al.dni || al.document_number || al.cliente || al.alert_id;
-                if (id) uniqueClientsPanel.add(id);
-
+                uniqueClientsPanel.add(resolveEntityId(al));
                 if (al.codigoregla) {
                     const nombre = `${al.codigoregla} - ${al.regla || 'Desconocida'}`;
                     conteo[nombre] = (conteo[nombre] || 0) + 1;
@@ -236,12 +248,12 @@ app.get('/api/stats/summary', async (req, res) => {
             const top = Object.entries(conteo)
                 .map(([nombre, quantity]) => ({ nombre, quantity, porcentaje: totalValidas > 0 ? Math.round((quantity / totalValidas) * 100) : 0 }))
                 .sort((a, b) => b.quantity - a.quantity)
-                .slice(0, 10); // 🚀 AQUÍ APLICAMOS EL CORTE A 10 REGLAS
+                .slice(0, 10);
 
             return {
                 top,
                 totalAlertas: arreglo.length, 
-                clientesImpactados: uniqueClientsPanel.size
+                clientesImpactados: uniqueClientsPanel.size 
             };
         };
 

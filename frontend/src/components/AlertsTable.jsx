@@ -151,43 +151,47 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
             return !s || String(s).toUpperCase() === String(vistaActual).toUpperCase();
           });
 
-          if (hayBusqueda) {
-            const agrupado = {};
-            arrData.forEach(item => {
-              let id = null;
-              const posiblesIds = [item.codigo_entidad, item.customer_id, item.merchant_id];
-              for (let pid of posiblesIds) {
-                if (pid && typeof pid === 'string' && /^[0-9a-fA-F]{8}-/.test(pid)) {
-                  id = pid; break;
-                }
-              }
-              if (!id) id = item.dni || item.document_number || textoBusqueda;
+          // 🚀 RESOLUCIÓN DE ENTIDAD IDÉNTICA AL BACKEND (100% Sincronizados)
+          const resolveEntityId = (item) => {
+              if (!item) return Math.random().toString();
+              let id = item.dni || item.document_number || item.documentNumber || item.nro_documento || item.numero_documento;
+              if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
+              
+              id = item.codigo_entidad || item.customer_id || item.customerId || item.merchant_id || item.entity_id;
+              if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
+              
+              id = item.cliente || item.full_name || item.fullName || item.merchant_name || item.nombre;
+              if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
+              
+              id = item.alert_id || item.id_transaccion || item.payment_id;
+              return id ? String(id).trim().toUpperCase() : Math.random().toString();
+          };
 
-              if (!agrupado[id]) {
-                agrupado[id] = { ...item, id_agrupacion: id };
-                if (!item.hasOwnProperty('total_alertas')) {
-                  agrupado[id].total_alertas = 1;
-                  agrupado[id].monto_total_riesgo = parseFloat(item.monto || 0);
-                }
-              } else {
-                if (!item.hasOwnProperty('total_alertas')) {
-                  agrupado[id].total_alertas += 1;
-                  agrupado[id].monto_total_riesgo += parseFloat(item.monto || 0);
-                }
-                const d1 = new Date(agrupado[id].fecha_ultima_compra || agrupado[id].fecha || 0);
-                const d2 = new Date(item.fecha_ultima_compra || item.fecha || 0);
-                if (d2 > d1) {
-                  agrupado[id].fecha_ultima_compra = item.fecha || item.fecha_ultima_compra;
-                }
+          const agrupado = {};
+          
+          arrData.forEach(item => {
+            const id = resolveEntityId(item);
+
+            if (!agrupado[id]) {
+              agrupado[id] = { 
+                ...item, 
+                id_agrupacion: id,
+                total_alertas: 1,
+                monto_total_riesgo: parseFloat(item.monto || 0)
+              };
+            } else {
+              agrupado[id].total_alertas += 1;
+              agrupado[id].monto_total_riesgo += parseFloat(item.monto || 0);
+              
+              const d1 = new Date(agrupado[id].fecha_ultima_compra || agrupado[id].fecha || 0);
+              const d2 = new Date(item.fecha_ultima_compra || item.fecha || 0);
+              if (d2 > d1) {
+                agrupado[id].fecha_ultima_compra = item.fecha || item.fecha_ultima_compra;
               }
-            });
-            arrData = Object.values(agrupado);
-          } else {
-             arrData = arrData.map(item => ({
-                ...item,
-                id_agrupacion: item.codigo_entidad || item.customer_id || item.merchant_id || item.dni || item.document_number
-             }));
-          }
+            }
+          });
+
+          arrData = Object.values(agrupado);
 
           arrData.sort((a, b) => {
             const fechaA = a.fecha_ultima_compra || a.fecha_ultima_alerta || a.ultima_fecha || a.max_fecha || a.fecha || 0;
@@ -256,10 +260,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
       <div className="bg-white md:rounded-2xl shadow-sm md:border border-gray-100 overflow-visible flex-1 flex flex-col">
         
         <div className="overflow-visible flex-1 bg-gray-50 md:bg-white">
-          
-          {/* ==================================================================================== */}
-          {/* 💻 VISTA ESCRITORIO: LA TABLA CLÁSICA */}
-          {/* ==================================================================================== */}
           <table className="hidden md:table w-full text-left border-collapse relative min-w-[800px]">
             <thead className="bg-gray-50/90 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-400 sticky top-0 backdrop-blur-sm z-10">
               <tr>
@@ -326,7 +326,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                           onClick={() => onAbrirRevision(
                             idEntidadFinal, 
                             entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name,
-                            entidades // 🚀 AQUÍ LE INYECTAMOS LA LISTA COMPLETA AL PADRE
+                            entidades 
                           )}
                         >
                           {idEntidadFinal && idEntidadFinal !== 'ID_ERROR' ? 'Revisar Entidad' : 'ID Inválido'}
@@ -339,9 +339,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
             </tbody>
           </table>
 
-          {/* ==================================================================================== */}
-          {/* 📱 VISTA MÓVIL: TARJETAS CON TOOLTIP HABILITADO */}
-          {/* ==================================================================================== */}
           <div className="block md:hidden space-y-3 pb-4">
             {cargando ? (
               <p className="text-center py-12 text-gray-400 font-bold italic">Consultando entidades...</p>
@@ -356,7 +353,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                 return (
                   <div key={idEntidadFinal || `card-${idx}`} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
                     
-                    {/* Fila Superior */}
                     <div className="flex justify-between items-start mb-3">
                       <span className="text-xs text-gray-500">
                         {fechaRaw ? new Date(fechaRaw).toLocaleString() : '—'}
@@ -377,7 +373,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </div>
                     </div>
 
-                    {/* Centro */}
                     <div className="mb-4">
                       <h3 className="font-bold text-gray-800 text-base leading-tight">
                         {entidad.cliente || entidad.full_name || 'Cliente no registrado'}
@@ -387,7 +382,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </p>
                     </div>
 
-                    {/* Fila Inferior */}
                     <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
                       <div>
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Riesgo Total</p>
@@ -401,7 +395,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                         onClick={() => onAbrirRevision(
                           idEntidadFinal, 
                           entidad.dni || entidad.document_number || entidad.cliente || entidad.full_name,
-                          entidades // 🚀 AQUÍ LE INYECTAMOS LA LISTA COMPLETA AL PADRE EN MÓVIL
+                          entidades
                         )}
                       >
                         {idEntidadFinal && idEntidadFinal !== 'ID_ERROR' ? 'Revisar' : 'Inválido'}
@@ -414,9 +408,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           </div>
         </div>
 
-        {/* ==================================================================================== */}
-        {/* 🚀 PAGINACIÓN REPOTENCIADA: "Primera" (<<) y "Última" (>>) añadidas y adaptables */}
-        {/* ==================================================================================== */}
         {!cargando && paginacionInfo && (
           <div className="bg-white border-t border-gray-100 p-3 md:p-4 flex flex-col md:flex-row items-center justify-between shrink-0 gap-3 md:gap-0">
             <p className="text-xs text-gray-500 text-center md:text-left">
@@ -426,7 +417,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
             
             <div className="flex items-center space-x-1.5 md:space-x-2 w-full md:w-auto justify-between md:justify-end">
               
-              {/* 🚀 Botón: Primera Página */}
               <button 
                 onClick={() => setPaginaActual(1)} 
                 disabled={paginacionInfo.currentPage === 1} 
@@ -464,7 +454,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                 Siguiente
               </button>
 
-              {/* 🚀 Botón: Última Página */}
               <button 
                 onClick={() => setPaginaActual(paginacionInfo.totalPages)} 
                 disabled={paginacionInfo.currentPage >= paginacionInfo.totalPages} 
