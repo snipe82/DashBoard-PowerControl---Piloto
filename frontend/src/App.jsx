@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
@@ -9,9 +9,11 @@ import UsersList from './components/UsersList';
 import UserCreate from './components/UserCreate'; 
 
 function App() {
+  // ==========================================
+  // 1. ZONA DE HOOKS (TODOS JUNTOS ARRIBA)
+  // ==========================================
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('accessToken'));
   
-  // ESTADO MAESTRO PARA MODULARIDAD
   const [moduloActual, setModuloActual] = useState('ALERTAS');
   const [vistaActual, setVistaActual] = useState('DASHBOARD');
   
@@ -23,17 +25,32 @@ function App() {
   const [filtros, setFiltros] = useState({ fechaInicio: '', fechaFin: '', busqueda: '' });
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // 🚀 PANTALLA BLOQUEADA: Si no hay token, no entra
+  // 🚀 CORTACIRCUITOS ANTI DOBLE-CLIC: El useCallback ahora está ARRIBA del return
+  const abrirRevision = useCallback((alertId, clientCtx, entidadesDeLaTabla) => {
+    setAlertaSeleccionada(alertId); 
+    setClienteContexto(clientCtx);
+    setListaActual(entidadesDeLaTabla || []); 
+    
+    // Micro-retraso para que React asiente los datos antes de abrir el cajón
+    setTimeout(() => {
+      setDrawerAbierto(true);
+    }, 10);
+  }, []);
+
+  // ==========================================
+  // 2. RETORNOS TEMPRANOS (LOGIN)
+  // ==========================================
   if (!isAuthenticated) {
     return <LoginView onLogin={() => {
       setIsAuthenticated(true);
-      // FORZAR MÓDULO POR DEFECTO AL INICIAR SESIÓN
       setModuloActual('ALERTAS');
       setVistaActual('DASHBOARD');
     }} />;
   }
 
-  // Lógica de cambio de módulo
+  // ==========================================
+  // 3. FUNCIONES COMPLEMENTARIAS
+  // ==========================================
   const handleCambiarModulo = (nuevoModulo) => {
     setModuloActual(nuevoModulo);
     setVistaActual(nuevoModulo === 'ALERTAS' ? 'DASHBOARD' : 'USERS_LIST');
@@ -46,14 +63,6 @@ function App() {
     setFiltros({ fechaInicio: '', fechaFin: '', busqueda: '' });
     setMenuAbierto(false); 
     setDrawerAbierto(false); 
-  };
-
-  // 🚀 ORQUESTACIÓN ATÓMICA DE ESTADOS DEL CASO
-  const abrirRevision = (alertId, clientCtx, entidadesDeLaTabla) => {
-    setAlertaSeleccionada(alertId); 
-    setClienteContexto(clientCtx);
-    setListaActual(entidadesDeLaTabla || []); 
-    setDrawerAbierto(true);
   };
 
   const currentIndex = listaActual.findIndex(e => (e.id_agrupacion || e.codigo_entidad || e.dni) === alertaSeleccionada);
@@ -76,6 +85,9 @@ function App() {
     }
   };
 
+  // ==========================================
+  // 4. RENDERIZADO DE LA APLICACIÓN
+  // ==========================================
   return (
     <div className="bg-bg-app text-gray-800 font-sans antialiased h-screen flex overflow-hidden relative">
       {menuAbierto && (

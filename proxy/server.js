@@ -80,6 +80,34 @@ app.get('/api/alerts', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
+// 🚀 NUEVO ENDPOINT: Adquirir candado de concurrencia (POST)
+app.post('/api/alerts/:id/lock', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/lock`, {
+            method: 'POST',
+            headers: getHeaders(req)
+        });
+        const data = await response.json().catch(() => null);
+        res.status(response.status).json(data);
+    } catch (error) {
+        res.status(502).json({ message: 'Error de pasarela al intentar adquirir llave de concurrencia.' });
+    }
+});
+
+// 🚀 NUEVO ENDPOINT: Liberar candado de concurrencia (POST)
+app.post('/api/alerts/:id/unlock', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/unlock`, {
+            method: 'POST',
+            headers: getHeaders(req)
+        });
+        const data = await response.json().catch(() => null);
+        res.status(response.status).json(data);
+    } catch (error) {
+        res.status(502).json({ message: 'Error de pasarela al intentar liberar llave de concurrencia.' });
+    }
+});
+
 app.get('/api/alerts/dni/:dni', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/dni/${req.params.dni}`, { headers: getHeaders(req) });
@@ -169,8 +197,6 @@ app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
 app.get('/api/users', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users`, { headers: getHeaders(req) });
-        
-        // Si no es un estado exitoso (200), manejamos el error de forma segura sin romper el JSON
         if (!response.ok) {
             const errorData = await response.json().catch(() => null);
             return res.status(response.status).json({ 
@@ -190,7 +216,6 @@ app.post('/api/users', async (req, res) => {
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
         });
-        
         const data = await response.json().catch(() => null);
         if (!response.ok) {
             return res.status(response.status).json({ 
@@ -210,7 +235,6 @@ app.patch('/api/users/change-role', async (req, res) => {
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
         });
-        
         const data = await response.json().catch(() => null);
         if (!response.ok) {
             return res.status(response.status).json({ 
@@ -230,7 +254,6 @@ app.patch('/api/users/activate', async (req, res) => {
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
         });
-        
         const data = await response.json().catch(() => null);
         if (!response.ok) {
             return res.status(response.status).json({ 
@@ -249,7 +272,6 @@ app.delete('/api/users/:userId', async (req, res) => {
             method: 'DELETE',
             headers: getHeaders(req)
         });
-        
         const data = await response.json().catch(() => null);
         if (!response.ok) {
             return res.status(response.status).json({ 

@@ -1,55 +1,54 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: '/', 
+  // Configuración base de tu pasarela local
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
-// Interceptor de PETICIONES (Inyecta el token)
-api.interceptors.request.use((config) => {
+// =========================================================
+// ⬆️ INTERCEPTOR DE PETICIONES (Adjuntar Token dinámicamente)
+// =========================================================
+api.interceptors.request.use(
+  (config) => {
     const token = localStorage.getItem('accessToken');
     if (token) {
-        config.headers['Authorization'] = `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
-}, (error) => {
+  },
+  (error) => {
     return Promise.reject(error);
-});
+  }
+);
 
-// Interceptor de RESPUESTAS (Maneja el Refresh Token)
-api.interceptors.response.use((response) => {
+// =========================================================
+// ⬇️ INTERCEPTOR DE RESPUESTAS (Escudo Global Antiexpiración)
+// =========================================================
+api.interceptors.response.use(
+  (response) => {
+    // Si la operación es exitosa (200, 201), la data fluye sin obstrucciones
     return response;
-}, async (error) => {
-    const originalRequest = error.config;
-
-    // 🚀 LA CURA: Si el error 401 viene del intento de Login, detenemos el interceptor aquí mismo 
-    // y dejamos que LoginView.jsx muestre su mensaje de error tranquilamente.
-    if (originalRequest.url.includes('/api/auth/login')) {
-        return Promise.reject(error);
+  },
+  (error) => {
+    // 🔒 CAPTURA ATÓMICA DE SESIÓN EXPIRADA (401)
+    if (error.response && error.response.status === 401) {
+      console.warn("⚠️ [PowerControl] Detectado estado 401. Token vencido o revocado.");
+      
+      // 1. Evacuamos la data de sesión corrupta/expirada del navegador
+      localStorage.clear();
+      
+      // 2. Alerta formal de seguridad para el operador analista
+      alert("Tu sesión ha expirado por motivos de seguridad corporativa. Por favor, vuelve a ingresar tus credenciales.");
+      
+      // 3. Forzamos un refresco limpio de la ventana.
+      // Al estar el localStorage vacío, App.jsx montará instantáneamente el LoginView.
+      window.location.reload();
     }
-
-    // Si nos da 401 en CUALQUIER OTRA RUTA, intentamos renovar
-    if (error.response?.status === 401 && !originalRequest._retry) {
-        originalRequest._retry = true;
-
-        try {
-            const refreshToken = localStorage.getItem('refreshToken');
-            
-            // Si ni siquiera hay refreshToken en memoria, cerramos directo
-            if (!refreshToken) throw new Error("No hay refresh token");
-
-            const { data } = await axios.post('/api/auth/refresh', { refreshToken });
-            
-            localStorage.setItem('accessToken', data.accessToken);
-            originalRequest.headers['Authorization'] = `Bearer ${data.accessToken}`;
-            
-            return api(originalRequest);
-        } catch (refreshError) {
-            localStorage.clear();
-            window.location.href = '/'; // Expulsar si caducó
-            return Promise.reject(refreshError);
-        }
-    }
+    
     return Promise.reject(error);
-});
+  }
+);
 
 export default api;

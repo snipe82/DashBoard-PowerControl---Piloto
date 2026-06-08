@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import api from '../api'; // 🚀 Axios Interceptor
+import api from '../api'; 
 
 const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
   const [alertas, setAlertas] = useState([]);
@@ -65,6 +65,10 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   const [inputPagina, setInputPagina] = useState("1");
   const pageSize = 20;
 
+  // 🚀 EXTRAER IDENTIDAD DEL USUARIO ACTIVO
+  const userSession = JSON.parse(localStorage.getItem('user') || '{}');
+  const miUsuarioActual = userSession.email || userSession.username || "analista@powerpay.pe";
+
   useEffect(() => { setPaginaActual(1); }, [vistaActual, filtros]);
 
   useEffect(() => {
@@ -106,10 +110,21 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           arrData.forEach(item => {
             const id = resolveEntityId(item);
             if (!agrupado[id]) {
-              agrupado[id] = { ...item, id_agrupacion: id, total_alertas: 1, monto_total_riesgo: parseFloat(item.monto || 0) };
+              agrupado[id] = { 
+                ...item, 
+                id_agrupacion: id, 
+                total_alertas: 1, 
+                monto_total_riesgo: parseFloat(item.monto || 0),
+                locked_by: item.locked_by || null,
+                locked_at: item.locked_at || null
+              };
             } else {
               agrupado[id].total_alertas += 1;
               agrupado[id].monto_total_riesgo += parseFloat(item.monto || 0);
+              if (item.locked_by) {
+                agrupado[id].locked_by = item.locked_by;
+                agrupado[id].locked_at = item.locked_at;
+              }
               if (new Date(item.fecha || 0) > new Date(agrupado[id].fecha_ultima_compra || agrupado[id].fecha || 0)) {
                 agrupado[id].fecha_ultima_compra = item.fecha || item.fecha_ultima_compra;
               }
@@ -161,7 +176,11 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           <table className="hidden md:table w-full text-left border-collapse relative min-w-[800px]">
             <thead className="bg-gray-50/90 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-400 sticky top-0 backdrop-blur-sm z-10">
               <tr>
-                <th className="px-6 py-4 font-bold">Última Compra</th><th className="px-6 py-4 font-bold">Entidad (Cliente)</th><th className="px-6 py-4 font-bold text-center">Alertas Agrupadas</th><th className="px-6 py-4 font-bold text-right">Riesgo Total Acumulado</th><th className="px-6 py-4 font-bold text-right">Acción</th>
+                <th className="px-6 py-4 font-bold">Última Compra</th>
+                <th className="px-6 py-4 font-bold">Entidad (Cliente)</th>
+                <th className="px-6 py-4 font-bold text-center">Alertas Agrupadas</th>
+                <th className="px-6 py-4 font-bold text-right">Riesgo Total Acumulado</th>
+                <th className="px-6 py-4 font-bold text-right">Acción</th>
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-gray-50">
@@ -169,10 +188,28 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                entidades.length === 0 ? <tr><td colSpan="5" className="text-center py-12 text-gray-500 italic">No se encontraron entidades en riesgo.</td></tr> : 
                entidades.map((entidad, idx) => {
                   const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
+                  
+                  // 🚀 REGLA DE BOTÓN INTELIGENTE NORMALIZADA (Ignora mayúsculas y espacios)
+                  const lockedByClean = String(entidad.locked_by || '').trim().toLowerCase();
+                  const miUsuarioClean = String(miUsuarioActual || '').trim().toLowerCase();
+                  const isLockedBySomeoneElse = entidad.locked_by !== null && lockedByClean !== miUsuarioClean;
+
                   return (
                     <tr key={idEntidadFinal || `entidad-${idx}`} className={`hover:bg-gray-50 transition-colors group ${hoveredEntityId === idEntidadFinal ? 'relative z-50' : 'relative z-0'}`}>
                       <td className="px-6 py-4 text-gray-500">{entidad.fecha_ultima_compra || entidad.fecha ? new Date(entidad.fecha_ultima_compra || entidad.fecha).toLocaleString() : '—'}</td>
-                      <td className="px-6 py-4 font-bold text-gray-800">{entidad.cliente || entidad.full_name || 'No registrado'}<br/><span className="text-[10px] text-gray-400 font-normal">Doc: {entidad.dni || entidad.document_number || idEntidadFinal}</span></td>
+                      
+                      <td className="px-6 py-4 font-bold text-gray-800">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>{entidad.cliente || entidad.full_name || 'No registrado'}</span>
+                          {isLockedBySomeoneElse && (
+                            <span className="inline-flex items-center gap-1 text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-black shadow-xs tracking-tight animate-pulse" title={`Bloqueado por ${entidad.locked_by} el ${entidad.locked_at ? new Date(entidad.locked_at).toLocaleString() : '—'}`}>
+                              🔒 {entidad.locked_by.split('@')[0]}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-normal block mt-0.5">Doc: {entidad.dni || entidad.document_number || idEntidadFinal}</span>
+                      </td>
+
                       <td className={`px-6 py-4 text-center relative ${hoveredEntityId === idEntidadFinal ? 'z-50' : 'z-0'}`}>
                         <div onMouseEnter={() => setHoveredEntityId(idEntidadFinal)} onMouseLeave={() => setHoveredEntityId(null)} className="inline-block relative">
                           <span className="bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold border border-red-200 shadow-sm cursor-pointer block">{entidad.total_alertas || 1} alertas</span>
@@ -181,13 +218,13 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </td>
                       <td className="px-6 py-4 font-black text-power-purple text-right text-base">S/ {parseFloat(entidad.monto_total_riesgo || entidad.monto || 0).toFixed(2)}</td>
                       <td className="px-6 py-4 text-right">
-                        {/* 🚀 CORREGIDO: Se añadió e.stopPropagation() para eludir el doble click */}
+                        {/* 🔓 EL BOTÓN NUNCA SE DESHABILITA POR CONCURRENCIA */}
                         <button className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity bg-power-purple/10 px-4 py-2 rounded-lg disabled:opacity-50"
                           disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                           onClick={(e) => {
                             e.stopPropagation();
                             onAbrirRevision(idEntidadFinal, entidad.dni || entidad.cliente, entidades);
-                          }}>Revisar Entidad</button>
+                          }}>{isLockedBySomeoneElse ? 'Ver Expediente' : 'Revisar Entidad'}</button>
                       </td>
                     </tr>
                   );
@@ -195,11 +232,18 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
             </tbody>
           </table>
 
+          {/* VISTA MÓVIL DISPOSITIVOS RESPONSIVOS */}
           <div className="block md:hidden space-y-3 pb-4">
             {cargando ? <p className="text-center py-12 text-gray-400 font-bold italic">Consultando entidades...</p> : 
              entidades.length === 0 ? <p className="text-center py-12 text-gray-500 italic">No se encontraron entidades.</p> : 
              entidades.map((entidad, idx) => {
                 const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
+                
+                // 🚀 REGLA DE BOTÓN INTELIGENTE NORMALIZADA (Ignora mayúsculas y espacios)
+                const lockedByClean = String(entidad.locked_by || '').trim().toLowerCase();
+                const miUsuarioClean = String(miUsuarioActual || '').trim().toLowerCase();
+                const isLockedBySomeoneElse = entidad.locked_by !== null && lockedByClean !== miUsuarioClean;
+
                 return (
                   <div key={idEntidadFinal || `card-${idx}`} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
                     <div className="flex justify-between items-start mb-3">
@@ -210,18 +254,24 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       </div>
                     </div>
                     <div className="mb-4">
-                      <h3 className="font-bold text-gray-800 text-base leading-tight">{entidad.cliente || 'No registrado'}</h3>
+                      <h3 className="font-bold text-gray-800 text-base leading-tight flex items-center gap-2 flex-wrap">
+                        <span>{entidad.cliente || 'No registrado'}</span>
+                        {isLockedBySomeoneElse && (
+                          <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-bold animate-pulse">
+                            🔒 {entidad.locked_by.split('@')[0]}
+                          </span>
+                        )}
+                      </h3>
                       <p className="text-xs text-gray-400 mt-0.5">Doc: {entidad.dni || idEntidadFinal}</p>
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
                       <div><p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Riesgo Total</p><p className="font-black text-power-purple text-lg">S/ {parseFloat(entidad.monto_total_riesgo || 0).toFixed(2)}</p></div>
-                      {/* 🚀 CORREGIDO: Se añadió e.stopPropagation() en el layout responsivo móvil */}
                       <button className="bg-power-purple text-white font-bold px-4 py-2.5 rounded-lg text-xs shadow-md active:scale-95 transition-transform disabled:opacity-50"
                         disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                         onClick={(e) => {
                           e.stopPropagation();
                           onAbrirRevision(idEntidadFinal, entidad.dni || entidad.cliente, entidades);
-                        }}>Revisar</button>
+                        }}>{isLockedBySomeoneElse ? 'Ver' : 'Revisar'}</button>
                     </div>
                   </div>
                 );
