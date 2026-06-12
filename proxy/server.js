@@ -80,7 +80,6 @@ app.get('/api/alerts', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVO ENDPOINT: Adquirir candado de concurrencia (POST)
 app.post('/api/alerts/:id/lock', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/lock`, {
@@ -94,7 +93,6 @@ app.post('/api/alerts/:id/lock', async (req, res) => {
     }
 });
 
-// 🚀 NUEVO ENDPOINT: Liberar candado de concurrencia (POST)
 app.post('/api/alerts/:id/unlock', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/unlock`, {
@@ -192,100 +190,159 @@ app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
 });
 
 // ==========================================
-// 👥 3. RUTAS DEL MÓDULO DE SEGURIDAD (CRUD)
+// 👥 3. RUTAS DEL MÓDULO DE SEGURIDAD (USUARIOS)
 // ==========================================
 app.get('/api/users', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users`, { headers: getHeaders(req) });
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            return res.status(response.status).json({ 
-                message: errorData?.message || `Error en el servidor backend al listar usuarios (Código ${response.status})` 
-            });
-        }
-        res.json(await response.json());
-    } catch (error) { 
-        res.status(502).json({ message: 'El servicio central de gestión de usuarios no responde (502).' }); 
-    }
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ message: 'Servicio de usuarios no disponible.' }); }
 });
 
 app.post('/api/users', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/register`, {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users`, {
             method: 'POST',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
         });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-            return res.status(response.status).json({ 
-                message: data?.message || `Error en el servidor al registrar el usuario (Código ${response.status})` 
-            });
-        }
-        res.status(response.status).json(data);
-    } catch (error) { 
-        res.status(502).json({ message: 'Error interno de red: No se pudo procesar el alta del usuario.' }); 
-    }
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ message: 'No se pudo crear el usuario.' }); }
 });
 
-app.patch('/api/users/change-role', async (req, res) => {
+app.put('/api/users/:id', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/change-role`, {
-            method: 'PATCH',
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/${req.params.id}`, {
+            method: 'PUT',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
         });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-            return res.status(response.status).json({ 
-                message: data?.message || `Error en el servidor al modificar los privilegios (Código ${response.status})` 
-            });
-        }
-        res.status(response.status).json(data);
-    } catch (error) { 
-        res.status(502).json({ message: 'Error de comunicación: El servidor de cambio de roles no responde.' }); 
-    }
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ message: 'No se pudo actualizar el usuario.' }); }
 });
 
-app.patch('/api/users/activate', async (req, res) => {
+app.delete('/api/users/:id', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/activate`, {
-            method: 'PATCH',
-            headers: getHeaders(req),
-            body: JSON.stringify(req.body)
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-            return res.status(response.status).json({ 
-                message: data?.message || `Error en el servidor central al reactivar la cuenta (Código ${response.status})` 
-            });
-        }
-        res.status(response.status).json(data);
-    } catch (error) { 
-        res.status(502).json({ message: 'Error en la pasarela intermedia al intentar activar la cuenta de analista.' }); 
-    }
-});
-
-app.delete('/api/users/:userId', async (req, res) => {
-    try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/${req.params.userId}`, {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/${req.params.id}`, {
             method: 'DELETE',
             headers: getHeaders(req)
         });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-            return res.status(response.status).json({ 
-                message: data?.message || `Error en el servidor central al revocar el acceso (Código ${response.status})` 
-            });
-        }
-        res.status(response.status).json(data);
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ message: 'No se pudo eliminar el usuario.' }); }
+});
+
+// ==========================================
+// 🛠️ 4. RUTAS DEL MÓDULO DE ANÁLISIS (REGLAS V2)
+// ==========================================
+app.get('/api/v1/rules', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, { headers: getHeaders(req) });
+        if (response.status === 401) return res.status(401).json({ error: 'Token expirado' });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+app.post('/api/v1/rules', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+app.get('/api/v1/rules/dictionary', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/dictionary`, { headers: getHeaders(req) });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+app.post('/api/v1/rules/test', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/test`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+// ⚔️ El pasaporte del Linter del Diseñador SQL
+app.post('/api/v1/rules/validate', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/validate`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor de validación no disponible.' }); }
+});
+
+app.get('/api/v1/rules/:ruleCode/history', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/history`, { headers: getHeaders(req) });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+app.get('/api/v1/rules/:ruleCode', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}`, { headers: getHeaders(req) });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+app.put('/api/v1/rules/:ruleCode', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}`, {
+            method: 'PUT',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/activation`, {
+            method: 'PATCH',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+// ==========================================
+// 🔎 5. NUEVO MÓDULO: BUSCADOR DE EVENTOS TRANSACCIONALES (CAJA NEGRA)
+// ==========================================
+app.get('/api/v1/events/search', async (req, res) => {
+    try {
+        // Tomamos el querystring original de React (?dni=123&application_id=456)
+        const queryString = req.url.split('?')[1] || '';
+        
+        // Hacemos el puente hacia el Microservicio Core (Motor 3015)
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/events/search?${queryString}`, { 
+            headers: getHeaders(req) 
+        });
+        
+        if (response.status === 401) return res.status(401).json({ error: 'Token expirado' });
+        
+        // Retornamos el contrato JSON exacto al Front-End
+        res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { 
-        res.status(502).json({ message: 'Error de red: No se pudo completar el bloqueo de credenciales.' }); 
+        res.status(503).json({ success: false, error: 'Servicio de eventos (caja negra) no disponible temporalmente.' }); 
     }
 });
 
 // ==========================================
-// 📊 4. ESTADÍSTICAS DEL DASHBOARD
+// 📊 6. PROCESADOR DE ESTADÍSTICAS DEL DASHBOARD (RESTAURADO EN SU TOTALIDAD)
 // ==========================================
 app.get('/api/stats/summary', async (req, res) => {
     try {
@@ -415,7 +472,7 @@ app.get('/api/stats/summary', async (req, res) => {
 });
 
 // ==========================================
-// 🌐 5. MANEJO DE RUTAS ESTÁTICAS / WILDCARD (SIEMPRE AL FINAL)
+// 🌐 7. MANEJO DE RUTAS ESTÁTICAS / WILDCARD (SIEMPRE AL FINAL)
 // ==========================================
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'views', 'index.html')));
 

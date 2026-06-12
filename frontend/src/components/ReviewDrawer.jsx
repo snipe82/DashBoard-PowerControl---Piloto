@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../api'; 
+// 🚀 IMPORTACIÓN CRÍTICA: Traemos el módulo forense para el despliegue en paralelo
+import EventsSearch from './EventsSearch';
 
 const traducirEstado = (estado) => {
   const diccionario = {
@@ -50,8 +52,10 @@ const ReviewDrawer = ({
   const [bloqueadoPorOtro, setBloqueadoPorOtro] = useState(false);
   const [mensajeBloqueo, setMensajeBloqueo] = useState('');
   
-  // 👁️ NUEVA BANDERA DE CONTROL VISUAL DE ARCHIVO
   const [esInmutable, setEsInmutable] = useState(false);
+
+  // 🚀 CONTROL DE VISOR PARALELO
+  const [showParallelEvents, setShowParallelEvents] = useState(false);
 
   const tengoCandadoRef = useRef(false);
   const idCandadoRef = useRef(null);
@@ -68,6 +72,8 @@ const ReviewDrawer = ({
       }
     } else {
       lastEstadoRef.current = estadoActual;
+      // 🧹 LIMPIEZA: Si cierran el cajón, reseteamos el visor paralelo
+      setShowParallelEvents(false);
     }
   }, [isOpen, estadoActual, onClose]);
 
@@ -234,7 +240,7 @@ const ReviewDrawer = ({
             setMensajeBloqueo(err.response.data?.error || err.response.data?.message || 'Esta alerta ya está siendo revisada por otro analista.');
           } else if (err.response && err.response.status === 400) {
             setBloqueadoPorOtro(true);
-            setEsInmutable(true); // 👁️ Activamos enfoque de solo lectura histórico
+            setEsInmutable(true); 
             setMensajeBloqueo(err.response.data?.error || err.response.data?.message || 'La alerta se encuentra en un estado inmutable de solo lectura.');
           }
         });
@@ -372,10 +378,35 @@ const ReviewDrawer = ({
   const scrollToDictamen = () => { formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const agregarRespuestaRapida = (frase) => { setComentario(prev => prev ? `${prev} - ${frase}` : frase); };
 
+  // 🧠 🌟 CRÍTICO: El DNI apunta SIEMPRE al DNI de la alerta actualmente seleccionada en el historial
+  const dniParaParallelLookup = alertaActiva?.dni || alertaActiva?.document_number || info?.id_value || '';
+  const appIdParaParallelLookup = payloadData?.application_id || payloadData?.applicationId || '';
+
   return (
     <>
-      <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'opacity-50 visible' : 'opacity-0 invisible'}`} onClick={onClose}></div>
-        <div className={`fixed right-0 top-0 h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* CAPA DE FONDO (BACKDROP) */}
+      <div 
+        className={`fixed inset-0 z-40 bg-black transition-opacity ${isOpen ? 'visible' : 'invisible'} ${showParallelEvents ? 'opacity-15' : 'opacity-50'}`} 
+        onClick={onClose}
+      />
+
+      {/* CONTENEDOR ENVOLVENTE INTEGRAL EN PARALELO */}
+      <div className={`fixed inset-0 z-50 flex justify-end overflow-hidden pointer-events-none ${isOpen ? 'visible' : 'invisible'}`}>
+
+        {/* 🚀 EL PANEL COMPAÑERO IZQUIERDO: Despliega el módulo forense en paralelo */}
+        {showParallelEvents && (
+          <div className="absolute left-0 top-0 h-full bg-gray-50 border-r border-gray-200 shadow-2xl p-4 md:p-6 overflow-y-auto pointer-events-auto z-50 animate-slide-in-left w-full md:w-1/3 lg:w-3/5">
+            <EventsSearch 
+              isModal={true} 
+              onClose={() => setShowParallelEvents(false)} 
+              initialDni={dniParaParallelLookup}       // 👈 Envía el DNI de la alerta activa en caliente
+              initialAppId={appIdParaParallelLookup}   // 👈 Envía el ID de Solicitud en caliente
+            />
+          </div>
+        )}
+
+        {/* EL CAJÓN DE REVISIÓN ORIGINAL */}
+        <div className={`relative h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl transform transition-transform duration-300 flex flex-col pointer-events-auto z-50 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           
           <div className="flex justify-between items-center border-b p-3 md:p-5 bg-white shrink-0 z-20 shadow-sm">
             <h3 className="text-xl font-bold text-power-blue truncate pr-2">Revisión de Entidad</h3>
@@ -389,6 +420,21 @@ const ReviewDrawer = ({
                   <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
                 </button>
               </div>
+
+              {/* 🚀 🌟 BOTÓN ACTUALIZADO: "Eventos" */}
+              <button 
+                onClick={() => setShowParallelEvents(!showParallelEvents)}
+                className={`text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm border transition-all active:scale-95 ${
+                  showParallelEvents 
+                    ? 'bg-amber-500 text-white border-amber-600' 
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+                title="Cruzar tramas JSON de este cliente a la izquierda en tiempo real"
+              >
+                <span className={showParallelEvents ? 'text-white' : 'text-amber-500'}>⚡</span> 
+                {showParallelEvents ? 'Ocultar Eventos' : 'Eventos'}
+              </button>
+
               <button onClick={scrollToDictamen} className="text-[10px] md:text-xs bg-power-purple/10 text-power-purple px-3 py-1.5 rounded-full font-bold hover:bg-power-purple/20 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-power-purple/20">
                 ⬇️ <span className="hidden sm:inline">Dictamen</span>
               </button>
@@ -405,7 +451,6 @@ const ReviewDrawer = ({
           ) : (
             <div className="space-y-6">
 
-              {/* 🧠 DISEÑO DINÁMICO INTELIGENTE SEPARANDO ARCHIVO DE CONCURRENCIA */}
               {bloqueadoPorOtro && (
                 <div className={`border text-xs font-bold p-3.5 rounded-xl flex items-center gap-2.5 shadow-sm animate-fade-in ${
                   esInmutable 
@@ -414,9 +459,7 @@ const ReviewDrawer = ({
                 }`}>
                   <span className="text-base">{esInmutable ? '👁️' : '🔒'}</span>
                   <div>
-                    <p className={`font-black uppercase tracking-wider text-[10px] mb-0.5 ${
-                      esInmutable ? 'text-slate-500' : 'text-amber-600'
-                    }`}>
+                    <p className={`font-black uppercase tracking-wider text-[10px] mb-0.5 ${esInmutable ? 'text-slate-500' : 'text-amber-600'}`}>
                       {esInmutable ? 'Expediente Histórico (Solo Lectura)' : 'Control de Concurrencia'}
                     </p>
                     <p className="font-medium text-slate-700">{mensajeBloqueo}</p>
@@ -435,7 +478,7 @@ const ReviewDrawer = ({
                       <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded shadow-xs ml-2 shrink-0 ${
                           info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border border-red-200' :
                           info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
-                          info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                          info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' :
                           info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border border-purple-200' :
                           'bg-blue-50 text-blue-600 border border-blue-200'
                         }`}>
@@ -605,6 +648,7 @@ const ReviewDrawer = ({
           )}
           </div>
         </div>
+      </div>
     </>
   );
 };

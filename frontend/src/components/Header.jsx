@@ -1,19 +1,28 @@
 import React from 'react';
 
-// 🚀 NUEVO: Recibimos la prop onToggleMenu desde App.jsx
-const Header = ({ vistaActual, filtros, setFiltros, onToggleMenu }) => {
+const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, onOpenQuickEvents }) => {
+  
   const titulos = {
-    DASHBOARD: 'Resumen Ejecutivo de Operaciones',
+    DASHBOARD: 'Resumen de Alertas',
     OPEN: 'Triage de Alertas',
-    IN_REVIEW: 'Gestión Activa (En Revisión)',
-    ADDITIONAL_REVIEW: 'Casos Especiales (Revisión Adicional)',
-    FRAUD: 'Casos Críticos (Fraude)',
-    DISCARDED: 'Historial (Descartadas)'
+    IN_REVIEW: 'Alertas en Revisión',               
+    ADDITIONAL_REVIEW: 'Revisión Adicional',         
+    FRAUD: 'Casos Críticos',
+    DISCARDED: 'Historial',
+    RULES_LIST: 'Lista de Reglas', 
+    NEW_RULE: 'Nueva Regla',
+    EDIT_RULE: 'Editar Regla',
+    USERS_LIST: 'Lista de Usuarios',
+    EVENTS_SEARCH: 'Buscador de Eventos'
   };
 
-  const tituloAMostrar = titulos[vistaActual] || 'Cargando...';
-  const mostrarFiltros = vistaActual !== 'DASHBOARD';
-
+  const tituloAMostrar = titulos[vistaActual] || (vistaActual ? vistaActual.replace(/_/g, ' ') : 'Módulo en Construcción');
+  
+  const isAlertasView = ['OPEN', 'IN_REVIEW', 'ADDITIONAL_REVIEW', 'FRAUD', 'DISCARDED'].includes(vistaActual);
+  const isRulesView = vistaActual === 'RULES_LIST';
+  const isUsersView = vistaActual === 'USERS_LIST';
+  
+  const mostrarFiltros = isAlertasView || isRulesView || isUsersView;
   const hayFiltrosActivos = filtros?.busqueda || filtros?.codigoEntidad || filtros?.fechaInicio || filtros?.fechaFin;
 
   const limpiarFiltros = () => {
@@ -21,97 +30,86 @@ const Header = ({ vistaActual, filtros, setFiltros, onToggleMenu }) => {
   };
 
   return (
-    // 🚀 ADAPTACIÓN: Cambiamos h-20 por min-h para que pueda crecer si es necesario, 
-    // y lo hacemos flex-col en móviles y flex-row en PC.
-    <header className="min-h-[5rem] bg-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-8 py-3 md:py-0 z-30 shrink-0 gap-3 md:gap-0">
+    <header className="min-h-[5rem] bg-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-6 py-3 md:py-0 z-30 shrink-0 gap-3 md:gap-0 w-full overflow-hidden border-b border-gray-100">
       
-      {/* Contenedor del Título y el Botón Hamburguesa */}
-      <div className="flex items-center w-full md:w-auto">
-        
-        {/* 🚀 EL MENÚ HAMBURGUESA: Solo visible en celular (md:hidden) */}
+      <div className="flex items-center w-full md:w-auto shrink-0 max-w-xs lg:max-w-none">
         <button 
           onClick={onToggleMenu}
           className="md:hidden mr-3 p-1.5 text-gray-500 hover:bg-gray-100 active:bg-gray-200 rounded-lg focus:outline-none transition-colors"
           aria-label="Abrir menú"
         >
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-
-        <h2 className="text-lg md:text-xl font-bold text-gray-800 tracking-tight truncate">{tituloAMostrar}</h2>
+        <h2 className="text-base lg:text-xl font-black text-gray-800 tracking-tight truncate" title={tituloAMostrar}>
+          {tituloAMostrar}
+        </h2>
       </div>
 
-      {mostrarFiltros && (
-        // 🚀 ADAPTACIÓN FILTROS: overflow-x-auto permite que en celular se deslicen con el dedo sin romper el diseño
-        <div className="flex items-center space-x-3 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-hide">
+      <div className="flex items-center justify-end flex-1 w-full md:w-auto gap-2 lg:gap-3 overflow-hidden">
+        
+        {mostrarFiltros && (
+          <div className="flex items-center gap-2 lg:gap-3 flex-1 md:flex-none justify-start md:justify-end">
+            {hayFiltrosActivos && (
+              <button onClick={limpiarFiltros} className="shrink-0 text-[10px] font-black text-red-500 uppercase tracking-widest hover:bg-red-50 px-2 py-1.5 rounded transition-colors">
+                Limpiar ✕
+              </button>
+            )}
 
-          {hayFiltrosActivos && (
-            <button
-              onClick={limpiarFiltros}
-              className="shrink-0 text-[10px] font-black text-red-500 uppercase tracking-widest hover:bg-red-50 px-2 py-1.5 rounded transition-colors"
-            >
-              Limpiar ✕
-            </button>
-          )}
+            {isAlertasView && (
+              <>
+                <div className="shrink-0 flex items-center bg-gray-50 border border-gray-300 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-power-purple transition-all scale-95 lg:scale-100 origin-right">
+                  <div className="flex items-center">
+                    <span className="text-[9px] font-black text-gray-400 mr-1.5 uppercase tracking-tighter">Desde</span>
+                    <input type="date" value={filtros?.fechaInicio || ''} onChange={(e) => setFiltros({ ...filtros, fechaInicio: e.target.value })} className="bg-transparent text-xs focus:outline-none text-gray-600 w-[105px]" />
+                  </div>
+                  <span className="mx-1.5 text-gray-300">|</span>
+                  <div className="flex items-center">
+                    <span className="text-[9px] font-black text-gray-400 mr-1.5 uppercase tracking-tighter">Hasta</span>
+                    <input type="date" value={filtros?.fechaFin || ''} onChange={(e) => setFiltros({ ...filtros, fechaFin: e.target.value })} className="bg-transparent text-xs focus:outline-none text-gray-600 w-[105px]" />
+                  </div>
+                </div>
+                
+                <div className="relative group shrink-0 hidden sm:block">
+                  <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
+                  <input type="text" placeholder="Buscar DNI..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-32 lg:w-40 bg-white text-gray-800" />
+                </div>
 
-          {/* Filtros de Fecha (Añadimos shrink-0 para que no se aplaste) */}
-          <div className="shrink-0 flex items-center bg-gray-50 border border-gray-300 rounded-lg px-3 py-1.5 focus-within:ring-2 focus-within:ring-power-purple transition-all">
-            <div className="flex items-center">
-              <span className="text-[9px] font-black text-gray-400 mr-2 uppercase tracking-tighter">Desde</span>
-              <input
-                type="date"
-                value={filtros?.fechaInicio || ''}
-                onChange={(e) => setFiltros({ ...filtros, fechaInicio: e.target.value })}
-                className="bg-transparent text-sm focus:outline-none text-gray-600"
-              />
-            </div>
-            <span className="mx-2 text-gray-300">|</span>
-            <div className="flex items-center">
-              <span className="text-[9px] font-black text-gray-400 mr-2 uppercase tracking-tighter">Hasta</span>
-              <input
-                type="date"
-                value={filtros?.fechaFin || ''}
-                onChange={(e) => setFiltros({ ...filtros, fechaFin: e.target.value })}
-                className="bg-transparent text-sm focus:outline-none text-gray-600"
-              />
-            </div>
+                <div className="relative group shrink-0 hidden md:block">
+                  <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
+                  <input type="text" placeholder="Código Entidad..." value={filtros?.codigoEntidad || ''} onChange={(e) => setFiltros({ ...filtros, codigoEntidad: e.target.value })} className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-36 lg:w-48 bg-white text-gray-800" />
+                </div>
+              </>
+            )}
+
+            {isRulesView && (
+              <div className="relative group shrink-0">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400"><svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2" strokeLinecap="round"></path></svg></span>
+                <input type="text" placeholder="Buscar código o nombre de regla..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-56 md:w-72 bg-white text-gray-800 shadow-sm" />
+              </div>
+            )}
+
+            {isUsersView && (
+              <div className="relative group shrink-0">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400"><svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2" strokeLinecap="round"></path></svg></span>
+                <input type="text" placeholder="Buscar por nombre o correo..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-56 md:w-72 bg-white text-gray-800 shadow-sm" />
+              </div>
+            )}
           </div>
+        )}
 
-          {/* BUSCADOR 1: Filtro Clásico por DNI (Añadimos shrink-0) */}
-          <div className="relative group shrink-0">
-            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2" strokeLinecap="round"></path>
-              </svg>
-            </span>
-            <input
-              type="text"
-              placeholder="Buscar por DNI..."
-              value={filtros?.busqueda || ''}
-              onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })}
-              className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-power-purple w-40 md:w-44 bg-white text-gray-800"
-            />
-          </div>
+        {/* 🚀 BOTÓN DE ACCESO RÁPIDO CON TEXTO COMPLETO */}
+        {moduloActual !== 'EVENTOS' && moduloActual !== 'SEGURIDAD' && (
+          <button 
+            onClick={onOpenQuickEvents}
+            className="shrink-0 flex items-center gap-1.5 bg-slate-900 text-white px-3 lg:px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md active:scale-95 border border-slate-700 whitespace-nowrap"
+          >
+            <span className="text-amber-400 text-sm">⚡</span> Acceso Rápido a Eventos
+          </button>
+        )}
 
-          {/* BUSCADOR 2: Filtro por Código de Entidad (Añadimos shrink-0) */}
-          <div className="relative group shrink-0">
-            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2" strokeLinecap="round"></path>
-              </svg>
-            </span>
-            <input
-              type="text"
-              placeholder="Buscar por Código Entidad..."
-              value={filtros?.codigoEntidad || ''}
-              onChange={(e) => setFiltros({ ...filtros, codigoEntidad: e.target.value })}
-              className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-power-purple w-48 md:w-56 bg-white text-gray-800"
-            />
-          </div>
-
-        </div>
-      )}
+      </div>
     </header>
   );
 };

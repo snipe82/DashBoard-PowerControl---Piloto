@@ -8,7 +8,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
   const [pwdStatus, setPwdStatus] = useState({ error: '', success: '', loading: false });
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
-  // Extraemos la información de la sesión activa
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userName = user.name || 'Analista Antifraude';
   const userRole = user.role || 'ANALYST';
@@ -49,7 +48,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
     }
   };
 
-  // BANDEJAS DEL MÓDULO DE ALERTAS
   const menuAlertas = [
     { id: 'DASHBOARD', label: 'Panel de Resumen', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg> },
     { id: 'OPEN', label: 'Triage de Alertas', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> },
@@ -59,19 +57,32 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
     { id: 'DISCARDED', label: 'Historial', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg> },
   ];
 
-  // VISTAS DEL MÓDULO DE SEGURIDAD
+  const menuAnalisis = [
+    { id: 'RULES_LIST', label: 'Motor de Reglas SQL', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg> }
+  ];
+
+  const menuEventos = [
+    { id: 'EVENTS_SEARCH', label: 'Buscador de Eventos', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg> }
+  ];
+
   const menuSeguridad = [
     { id: 'USERS_LIST', label: 'Directorio de Usuarios', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> },
     { id: 'USER_CREATE', label: 'Crear Nuevo Usuario', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg> },
   ];
 
-  const menuActivo = moduloActual === 'ALERTAS' ? menuAlertas : menuSeguridad;
+  // 🚀 EVALUACIÓN EXACTA SIN "DESCARTES"
+  const menuActivo = moduloActual === 'ALERTAS' 
+    ? menuAlertas 
+    : moduloActual === 'ANALISIS' 
+      ? menuAnalisis 
+      : moduloActual === 'EVENTOS'
+        ? menuEventos
+        : menuSeguridad;
 
   return (
     <>
       <div className="w-64 bg-white border-r border-gray-100 flex flex-col h-full shadow-sm shrink-0">
         
-        {/* CABECERA LIMPIA: LOGO + INDICADOR MOTOR */}
         <div className="p-5 flex flex-col items-center border-b border-gray-50 text-center">
           <h1 className="text-2xl font-black text-power-blue tracking-tight italic">
             Power<span className="text-power-purple">Control</span>
@@ -84,7 +95,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
             </p>
           </div>
           
-          {/* SELECTOR DE MÓDULOS */}
           <div className="mt-5 w-full">
             <select 
               value={moduloActual} 
@@ -92,6 +102,8 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
               className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg px-2 py-2 outline-none focus:border-power-purple focus:ring-1 focus:ring-power-purple cursor-pointer shadow-sm transition-all"
             >
               <option value="ALERTAS">🛡️ Módulo de Alertas</option>
+              <option value="EVENTOS">🔎 Módulo de Eventos</option>
+              <option value="ANALISIS">📊 Módulo de Análisis</option>
               {userRole === 'ADMIN' && (
                 <option value="SEGURIDAD">🔐 Módulo de Seguridad</option>
               )}
@@ -99,7 +111,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
           </div>
         </div>
 
-        {/* CONTENEDOR DE NAVEGACIÓN COMPONENTES */}
         <div className="flex-1 overflow-y-auto py-5 px-4 space-y-1.5 scrollbar-thin">
           {menuActivo.map((item) => {
             const isActive = vistaActual === item.id;
@@ -118,7 +129,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
           })}
         </div>
 
-        {/* SECCIÓN INFERIOR: ACORDEÓN DE CONTROL DE SESIÓN */}
         <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
           <div onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)} className="flex items-center gap-3 p-2 -mx-2 rounded-xl hover:bg-gray-200/50 cursor-pointer transition-colors">
             <div className="w-10 h-10 rounded-full bg-power-blue text-white flex items-center justify-center font-black text-lg shadow-md shrink-0">{userInitials}</div>
@@ -147,7 +157,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
 
       </div>
 
-      {/* MODAL DE DICTAMEN DE CONTRASEÑA */}
       {isPwdModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-gray-100">
