@@ -44,12 +44,27 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
     return fullSql.trim(); 
   };
 
+  // 🛡️ NORMALIZADOR: Evita errores de Case Sensitivity del Backend vs el <select>
+  const normalizeMetadata = (data) => {
+    let evType = data.event_type || 'FullApplicationRT';
+    if (evType.toLowerCase() === 'fullapplicationnrt') evType = 'FullApplicationNRT';
+    else if (evType.toLowerCase() === 'fullapplicationrt') evType = 'FullApplicationRT';
+    
+    let entType = data.entity_type || 'customer';
+    entType = entType.toLowerCase();
+
+    return { ...data, event_type: evType, entity_type: entType };
+  };
+
   useEffect(() => {
     if (isEdit) {
       api.get(`/api/v1/rules/${ruleToEdit.rule_code}`).then(res => {
           let ruleData = res.data?.data || res.data?.rule || res.data;
           if (ruleData) {
-            const mergedData = { ...initialFormState, ...ruleData };
+            // 🚀 Aplicamos el normalizador antes de guardarlo en el estado
+            const normalizedData = normalizeMetadata(ruleData);
+            const mergedData = { ...initialFormState, ...normalizedData };
+            
             setFormData(mergedData);
             setOriginalData(mergedData); 
             
@@ -109,13 +124,14 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
   };
 
   const loadOldVersion = (historyItem) => {
-    setEditableSql(parseIncomingSql(historyItem.query_sql));
+    const normalizedItem = normalizeMetadata(historyItem); // 🚀 Normalizamos el histórico también
+    setEditableSql(parseIncomingSql(normalizedItem.query_sql));
     setFormData(prev => ({
       ...prev,
-      rule_name: historyItem.rule_name || prev.rule_name,
-      entity_type: historyItem.entity_type || prev.entity_type,
-      event_type: historyItem.event_type || prev.event_type,
-      severity: historyItem.severity || prev.severity
+      rule_name: normalizedItem.rule_name || prev.rule_name,
+      entity_type: normalizedItem.entity_type || prev.entity_type,
+      event_type: normalizedItem.event_type || prev.event_type,
+      severity: normalizedItem.severity || prev.severity
     }));
     setHistoryModalOpen(false);
     setCompareData(null);
@@ -128,9 +144,10 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
   };
 
   const openCompare = (historyItem) => {
+    const normalizedItem = normalizeMetadata(historyItem);
     setCompareData({
-      ...historyItem,
-      parsedSql: parseIncomingSql(historyItem.query_sql)
+      ...normalizedItem,
+      parsedSql: parseIncomingSql(normalizedItem.query_sql)
     });
   };
 
@@ -151,12 +168,13 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
   ) : false;
 
   const checkIsCurrentlyLoaded = (item) => {
-    const parsedSql = parseIncomingSql(item.query_sql);
+    const normalizedItem = normalizeMetadata(item);
+    const parsedSql = parseIncomingSql(normalizedItem.query_sql);
     return (
-      formData.rule_name === (item.rule_name || formData.rule_name) &&
-      formData.severity === (item.severity || formData.severity) &&
-      formData.entity_type === (item.entity_type || formData.entity_type) &&
-      formData.event_type === (item.event_type || formData.event_type) &&
+      formData.rule_name === (normalizedItem.rule_name || formData.rule_name) &&
+      formData.severity === (normalizedItem.severity || formData.severity) &&
+      formData.entity_type === (normalizedItem.entity_type || formData.entity_type) &&
+      formData.event_type === (normalizedItem.event_type || formData.event_type) &&
       editableSql === parsedSql
     );
   };
@@ -186,7 +204,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
       {errorBackend && <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl font-bold text-sm shadow-xs animate-fade-in">🛑 {errorBackend}</div>}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
-        {/* METADATOS BASES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-gray-100">
           <div>
             <label className="block text-xs font-black text-gray-500 uppercase tracking-wide mb-1.5">Código Único (Rule Code)</label>
@@ -213,14 +230,12 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
           </div>
         </div>
 
-        {/* 🎨 PREVISUALIZACIÓN SQL */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
           <div className="flex justify-between items-center mb-4">
             <div>
               <label className="block text-sm font-black text-power-blue uppercase tracking-wide">Estructura SQL (Modo Lectura)</label>
               <p className="text-[10px] text-gray-500 font-bold mt-0.5">La consulta actual de esta regla desplegada en BD.</p>
             </div>
-            {/* 🚀 TEXTO DEL BOTÓN ACTUALIZADO */}
             <button type="button" onClick={() => setShowDesigner(true)} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg font-bold text-sm shadow-md transition-all active:scale-95 flex items-center gap-2">
               <span>🧑‍💻</span> Abrir Diseñador de Reglas
             </button>
@@ -240,7 +255,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
                 <span className="font-bold">Cuerpo de la Consulta</span>
                 <span className="text-slate-400 font-bold">Solo lectura</span>
               </div>
-              {/* 🚀 PLACEHOLDER DEL CODEMIRROR ACTUALIZADO */}
               <CodeMirror value={editableSql} placeholder="-- No hay código SQL definido. Abre el Diseñador de Reglas para comenzar a estructurar tu query." height="auto" maxHeight="400px" theme="dark" extensions={[sql()]} readOnly={true} editable={false} basicSetup={{ lineNumbers: true, highlightActiveLine: false, foldGutter: false }} />
             </div>
           </div>
@@ -259,10 +273,16 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
         </div>
       </div>
 
-      {/* RENDERIZADO CONDICIONAL DEL FULLSCREEN DESIGNER */}
-      {showDesigner && <RuleDesigner initialSql={editableSql} onApplySql={(newSql) => { setEditableSql(newSql); setShowDesigner(false); }} onClose={() => setShowDesigner(false)} />}
+      {showDesigner && (
+        <RuleDesigner 
+          initialSql={editableSql} 
+          ruleEventType={formData.event_type} 
+          ruleEntityType={formData.entity_type} 
+          onApplySql={(newSql) => { setEditableSql(newSql); setShowDesigner(false); }} 
+          onClose={() => setShowDesigner(false)} 
+        />
+      )}
 
-      {/* MODAL DE CONFIRMACIÓN DE GUARDADO CON COMENTARIO */}
       {saveModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[50]">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in">
@@ -281,7 +301,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
         </div>
       )}
 
-      {/* MODAL DEL HISTORIAL (TIMELINE) - FONDO TRANSPARENTE 40% SIN BLUR */}
       {historyModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 flex justify-end z-[40]">
           <div className="bg-white w-full max-w-md h-full flex flex-col shadow-2xl animate-fade-in-right">
@@ -353,7 +372,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
         </div>
       )}
 
-      {/* ⚖️ MODAL DE COMPARACIÓN SIDE-BY-SIDE */}
       {compareData && (
         <div className="fixed inset-0 bg-slate-900/95 flex flex-col z-[60] animate-fade-in backdrop-blur-sm">
           <div className="p-4 flex justify-between items-center border-b border-slate-800 shrink-0 bg-slate-950">

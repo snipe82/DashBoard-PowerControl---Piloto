@@ -58,7 +58,7 @@ const PARAMS_STATIC_TABLE = {
   ]
 };
 
-const RuleDesigner = ({ initialSql, onApplySql, onClose }) => {
+const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, onClose }) => {
   const [dictionary, setDictionary] = useState([]);
   const [openTable, setOpenTable] = useState(null);
   const [copiedItem, setCopiedItem] = useState(null);
@@ -395,14 +395,48 @@ const RuleDesigner = ({ initialSql, onApplySql, onClose }) => {
     }
   };
 
+  // 🚀 GUARDARRAÍL BLINDADO CON ALERTAS VISUALES
   const handleSelectRealEvent = (eventoReal) => {
+    
+    // 🛡️ 1. VALIDAR TIPO DE EVENTO (Ej. FullApplicationRT vs NRT)
+    const evType = (eventoReal.event_type || '').toLowerCase();
+    const rType = (ruleEventType || '').toLowerCase();
+    
+    if (rType && evType !== rType) {
+      alert(`🛑 BLOQUEO DE INYECCIÓN:\n\nEstás diseñando una regla para el flujo [ ${ruleEventType} ], pero seleccionaste un evento del flujo [ ${eventoReal.event_type} ].\n\nPor favor, busca un evento que coincida con el flujo de tu regla para evitar falsos negativos.`);
+      return; // Detenemos la inyección y NO cerramos el modal
+    }
+
+    // 🛡️ 2. PRE-EXTRACCIÓN DE DATOS PARA VALIDAR ENTIDAD
     const customerId = eventoReal.customer_id || '';
     const appId = eventoReal.application_id || '';
-    
     const payloadRecepcion = eventoReal.payloads?.recepcion || {};
-    const deviceId = payloadRecepcion.deviceid || payloadRecepcion.deviceId || payloadRecepcion.device_id || '';
+    const deviceId = payloadRecepcion.deviceid || payloadRecepcion.deviceId || payloadRecepcion.device_id || payloadRecepcion.device_fingerprint || '';
     const merchantId = payloadRecepcion.merchantid || payloadRecepcion.merchantId || payloadRecepcion.merchant_id || '';
 
+    const evEntity = (eventoReal.entity_type || payloadRecepcion.entity_type || payloadRecepcion.entityType || '').toLowerCase();
+    const rEntity = (ruleEntityType || '').toLowerCase();
+
+    // 🛡️ 3. VALIDAR ENTIDAD EXPLÍCITA
+    if (evEntity && rEntity && evEntity !== rEntity) {
+      alert(`🛑 BLOQUEO DE INYECCIÓN:\n\nLa regla evalúa entidades tipo '${ruleEntityType}', pero seleccionaste un evento de '${evEntity}'.`);
+      return;
+    }
+
+    // 🛡️ 4. VALIDACIÓN POR INFERENCIA (Si la trama es "muda" respecto a su entidad)
+    if (!evEntity && rEntity) {
+      let hasRequiredId = true;
+      if (rEntity === 'customer' && !customerId) hasRequiredId = false;
+      if (rEntity === 'device' && !deviceId) hasRequiredId = false;
+      if (rEntity === 'merchant' && !merchantId) hasRequiredId = false;
+
+      if (!hasRequiredId) {
+        alert(`🛑 TRAMA INCOMPATIBLE:\n\nEl evento inyectado no tiene el identificador correspondiente para analizar a un '${ruleEntityType}'. Faltan datos base en el JSON de recepción.`);
+        return;
+      }
+    }
+
+    // ✅ Todo en orden, procedemos a inyectar en el banco de pruebas
     setTestParams({
       p1: customerId,
       p2: appId,
@@ -410,6 +444,7 @@ const RuleDesigner = ({ initialSql, onApplySql, onClose }) => {
       p4: merchantId
     });
 
+    setTestResult(null); 
     setEventPickerOpen(false); 
   };
 
@@ -422,7 +457,7 @@ const RuleDesigner = ({ initialSql, onApplySql, onClose }) => {
         }
       `}</style>
 
-      {/* 🚀 HEADER RESPONSIVE ACTUALIZADO CON TÍTULOS DE NEGOCIO */}
+      {/* HEADER RESPONSIVE */}
       <div className="bg-slate-950 border-b border-slate-800 p-3 md:p-4 flex flex-col md:flex-row justify-between items-start md:items-center text-white shrink-0 shadow-sm gap-3">
         <div>
           <h2 className="text-lg md:text-xl font-black text-power-blue tracking-wider flex items-center gap-2">🧑‍💻 Diseñador de Reglas</h2>
