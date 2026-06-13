@@ -324,17 +324,12 @@ app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
 // ==========================================
 app.get('/api/v1/events/search', async (req, res) => {
     try {
-        // Tomamos el querystring original de React (?dni=123&application_id=456)
         const queryString = req.url.split('?')[1] || '';
-        
-        // Hacemos el puente hacia el Microservicio Core (Motor 3015)
         const response = await fetch(`http://127.0.0.1:3015/api/v1/events/search?${queryString}`, { 
             headers: getHeaders(req) 
         });
         
         if (response.status === 401) return res.status(401).json({ error: 'Token expirado' });
-        
-        // Retornamos el contrato JSON exacto al Front-End
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { 
         res.status(503).json({ success: false, error: 'Servicio de eventos (caja negra) no disponible temporalmente.' }); 
@@ -342,7 +337,7 @@ app.get('/api/v1/events/search', async (req, res) => {
 });
 
 // ==========================================
-// 📊 6. PROCESADOR DE ESTADÍSTICAS DEL DASHBOARD (RESTAURADO EN SU TOTALIDAD)
+// 📊 6. PROCESADOR DE ESTADÍSTICAS DEL DASHBOARD (REPOTENCIADO V4)
 // ==========================================
 app.get('/api/stats/summary', async (req, res) => {
     try {
@@ -360,13 +355,15 @@ app.get('/api/stats/summary', async (req, res) => {
             return [];
         };
 
+        // 🚀 SUBIMOS A 5000 EL LÍMITE PARA ALCANZAR LOS DATOS DE MAYO (MES ANTERIOR)
+        const limit = 5000;
         const [abiertas, enRevision, fraudes, sospechosos, descartadas, enRevisionAdicional] = await Promise.all([
-            fetchSafe('http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=1000'),
-            fetchSafe('http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=1000'),
-            fetchSafe('http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=1000'),
-            fetchSafe('http://127.0.0.1:3015/api/v1/alerts?status=SUSPICIOUS&pageSize=1000'),
-            fetchSafe('http://127.0.0.1:3015/api/v1/alerts?status=DISCARDED&pageSize=1000'),
-            fetchSafe('http://127.0.0.1:3015/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=1000')
+            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=${limit}`),
+            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=${limit}`),
+            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=${limit}`),
+            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=SUSPICIOUS&pageSize=${limit}`),
+            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=DISCARDED&pageSize=${limit}`),
+            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=${limit}`)
         ]);
 
         const activas = [...abiertas, ...enRevision, ...enRevisionAdicional];
@@ -382,11 +379,25 @@ app.get('/api/stats/summary', async (req, res) => {
         const globalesMesActual = [];
         const globalesMesAnterior = [];
 
+        // 🧠 EXTRACTOR DEFENSIVO DE FECHAS A PRUEBA DE BALAS
+        const extractSafeDate = (al) => {
+            let raw = al.fecha || al.fecha_creacion || al.created_at || al.dates?.utc;
+            if (!raw) return null;
+
+            // Si el backend envía formato "DD/MM/YYYY" (Ej: 15/05/2026), JS lo voltea. Lo forzamos a estándar ISO.
+            if (typeof raw === 'string' && raw.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+                const parts = raw.split(/[\s/T:-]+/); 
+                // parts[0]=DD, parts[1]=MM, parts[2]=YYYY
+                raw = `${parts[2]}-${parts[1]}-${parts[0]}T${parts[3]||'00'}:${parts[4]||'00'}:${parts[5]||'00'}`;
+            }
+
+            const d = new Date(raw);
+            return isNaN(d.getTime()) ? null : d;
+        };
+
         globales.forEach(al => {
-            const fechaRaw = al.fecha || al.fecha_creacion || al.created_at;
-            if (!fechaRaw) return;
-            const d = new Date(fechaRaw);
-            if (isNaN(d.getTime())) return;
+            const d = extractSafeDate(al);
+            if (!d) return;
 
             if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) globalesMesActual.push(al);
             else if (d.getFullYear() === prevYear && d.getMonth() === prevMonth) globalesMesAnterior.push(al);
@@ -396,26 +407,30 @@ app.get('/api/stats/summary', async (req, res) => {
         let dineroRiesgoNeto = 0;
 
         activas.forEach(al => {
-            const fechaSinSegundos = al.fecha ? new Date(al.fecha).setSeconds(0, 0) : '0';
-            const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${al.monto}`;
+            const d = extractSafeDate(al);
+            const fechaSinSegundos = d ? d.setSeconds(0, 0) : '0';
+            
+            const monto = al.monto || al.amount || al.payloads?.recepcion?.amount || 0;
+            const txKey = al.transaction_id || al.application_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${monto}`;
+            
             if (!txProcesadasDashboard.has(txKey)) {
                 txProcesadasDashboard.add(txKey);
-                dineroRiesgoNeto += parseFloat(al.monto || 0);
+                dineroRiesgoNeto += parseFloat(monto || 0);
             }
         });
 
         const resolveEntityId = (item) => {
             if (!item) return Math.random().toString();
-            let id = item.dni || item.document_number || item.documentNumber || item.nro_documento || item.numero_documento;
+            let id = item.dni || item.document_number || item.customer_details?.dni || item.nro_documento;
             if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
             
-            id = item.codigo_entidad || item.customer_id || item.customerId || item.merchant_id || item.entity_id;
+            id = item.customer_id || item.codigo_entidad || item.merchant_id || item.entity_id;
             if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
             
-            id = item.cliente || item.full_name || item.fullName || item.merchant_name || item.nombre;
+            id = item.full_name || item.customer_details?.full_name || item.cliente || item.nombre;
             if (id && String(id).trim() !== '') return String(id).trim().toUpperCase();
             
-            id = item.alert_id || item.id_transaccion || item.payment_id;
+            id = item.application_id || item.alert_id || item.id_transaccion;
             return id ? String(id).trim().toUpperCase() : Math.random().toString();
         };
 
@@ -437,11 +452,14 @@ app.get('/api/stats/summary', async (req, res) => {
 
             arreglo.forEach(al => {
                 uniqueClientsPanel.add(resolveEntityId(al));
-                if (al.codigoregla) {
-                    const nombre = `${al.codigoregla} - ${al.regla || 'Desconocida'}`;
-                    conteo[nombre] = (conteo[nombre] || 0) + 1;
-                    totalValidas++;
-                }
+                
+                // 🚀 AQUÍ ESTABA EL BLOQUEADOR. Ahora, si no hay código de regla, igual la suma como "SIN_CODIGO"
+                const ruleCode = al.rule_code || al.codigoregla || al.ruleCode || al.alert_code || 'SIN_CÓDIGO';
+                const ruleName = al.rule_name || al.regla || al.ruleName || 'Regla Histórica / Desconocida';
+                
+                const nombre = `${ruleCode} - ${ruleName}`;
+                conteo[nombre] = (conteo[nombre] || 0) + 1;
+                totalValidas++;
             });
 
             const top = Object.entries(conteo)

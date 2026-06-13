@@ -99,8 +99,8 @@ const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, 
           </div>
         )}
 
-        {/* 🚀 BOTÓN DE ACCESO RÁPIDO CON TEXTO COMPLETO */}
-        {moduloActual !== 'EVENTOS' && moduloActual !== 'SEGURIDAD' && (
+        {/* 🚀 BOTÓN DE ACCESO RÁPIDO CON RESTRICCIÓN DE DASHBOARD */}
+        {moduloActual !== 'EVENTOS' && moduloActual !== 'SEGURIDAD' && vistaActual !== 'DASHBOARD' && (
           <button 
             onClick={onOpenQuickEvents}
             className="shrink-0 flex items-center gap-1.5 bg-slate-900 text-white px-3 lg:px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md active:scale-95 border border-slate-700 whitespace-nowrap"
