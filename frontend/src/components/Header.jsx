@@ -47,10 +47,10 @@ const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, 
         </h2>
       </div>
 
-      <div className="flex items-center justify-end flex-1 w-full md:w-auto gap-2 lg:gap-3 overflow-hidden">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-end flex-1 w-full md:w-auto gap-3 lg:gap-3 overflow-visible">
         
         {mostrarFiltros && (
-          <div className="flex items-center gap-2 lg:gap-3 flex-1 md:flex-none justify-start md:justify-end">
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 lg:gap-3 flex-1 md:flex-none justify-start md:justify-end w-full md:w-auto">
             {hayFiltrosActivos && (
               <button onClick={limpiarFiltros} className="shrink-0 text-[10px] font-black text-red-500 uppercase tracking-widest hover:bg-red-50 px-2 py-1.5 rounded transition-colors">
                 Limpiar ✕
@@ -59,51 +59,53 @@ const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, 
 
             {isAlertasView && (
               <>
-                <div className="shrink-0 flex items-center bg-gray-50 border border-gray-300 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-power-purple transition-all scale-95 lg:scale-100 origin-right">
-                  <div className="flex items-center">
+                <div className="w-full md:w-auto shrink-0 flex items-center justify-between md:justify-start bg-gray-50 border border-gray-300 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-power-purple transition-all">
+                  <div className="flex items-center flex-1 md:flex-none">
                     <span className="text-[9px] font-black text-gray-400 mr-1.5 uppercase tracking-tighter">Desde</span>
-                    <input type="date" value={filtros?.fechaInicio || ''} onChange={(e) => setFiltros({ ...filtros, fechaInicio: e.target.value })} className="bg-transparent text-xs focus:outline-none text-gray-600 w-[105px]" />
+                    <input type="date" value={filtros?.fechaInicio || ''} onChange={(e) => setFiltros({ ...filtros, fechaInicio: e.target.value })} className="bg-transparent text-xs focus:outline-none text-gray-600 w-full md:w-[105px]" />
                   </div>
                   <span className="mx-1.5 text-gray-300">|</span>
-                  <div className="flex items-center">
+                  <div className="flex items-center flex-1 md:flex-none">
                     <span className="text-[9px] font-black text-gray-400 mr-1.5 uppercase tracking-tighter">Hasta</span>
-                    <input type="date" value={filtros?.fechaFin || ''} onChange={(e) => setFiltros({ ...filtros, fechaFin: e.target.value })} className="bg-transparent text-xs focus:outline-none text-gray-600 w-[105px]" />
+                    <input type="date" value={filtros?.fechaFin || ''} onChange={(e) => setFiltros({ ...filtros, fechaFin: e.target.value })} className="bg-transparent text-xs focus:outline-none text-gray-600 w-full md:w-[105px]" />
                   </div>
                 </div>
                 
-                <div className="relative group shrink-0 hidden sm:block">
-                  <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
-                  <input type="text" placeholder="Buscar DNI..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-32 lg:w-40 bg-white text-gray-800" />
-                </div>
+                {/* 🚀 NUEVO BLOQUE: DNI y Entidad visibles en móvil (50/50 de ancho) */}
+                <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                  <div className="relative group flex-1 md:flex-none">
+                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
+                    <input type="text" placeholder="Buscar DNI..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-full md:w-32 lg:w-40 bg-white text-gray-800" />
+                  </div>
 
-                <div className="relative group shrink-0 hidden md:block">
-                  <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
-                  <input type="text" placeholder="Código Entidad..." value={filtros?.codigoEntidad || ''} onChange={(e) => setFiltros({ ...filtros, codigoEntidad: e.target.value })} className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-36 lg:w-48 bg-white text-gray-800" />
+                  <div className="relative group flex-1 md:flex-none">
+                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
+                    <input type="text" placeholder="Código Entidad..." value={filtros?.codigoEntidad || ''} onChange={(e) => setFiltros({ ...filtros, codigoEntidad: e.target.value })} className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-full md:w-36 lg:w-48 bg-white text-gray-800" />
+                  </div>
                 </div>
               </>
             )}
 
             {isRulesView && (
-              <div className="relative group shrink-0">
+              <div className="relative group shrink-0 w-full md:w-auto mt-2 md:mt-0">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400"><svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2" strokeLinecap="round"></path></svg></span>
-                <input type="text" placeholder="Buscar código o nombre de regla..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-56 md:w-72 bg-white text-gray-800 shadow-sm" />
+                <input type="text" placeholder="Buscar código o nombre de regla..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-full md:w-72 bg-white text-gray-800 shadow-sm" />
               </div>
             )}
 
             {isUsersView && (
-              <div className="relative group shrink-0">
+              <div className="relative group shrink-0 w-full md:w-auto mt-2 md:mt-0">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400"><svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2" strokeLinecap="round"></path></svg></span>
-                <input type="text" placeholder="Buscar por nombre o correo..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-56 md:w-72 bg-white text-gray-800 shadow-sm" />
+                <input type="text" placeholder="Buscar por nombre o correo..." value={filtros?.busqueda || ''} onChange={(e) => setFiltros({ ...filtros, busqueda: e.target.value })} className="pl-10 pr-4 py-1.5 border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-power-purple w-full md:w-72 bg-white text-gray-800 shadow-sm" />
               </div>
             )}
           </div>
         )}
 
-        {/* 🚀 BOTÓN DE ACCESO RÁPIDO CON RESTRICCIÓN DE DASHBOARD */}
         {moduloActual !== 'EVENTOS' && moduloActual !== 'SEGURIDAD' && vistaActual !== 'DASHBOARD' && (
           <button 
             onClick={onOpenQuickEvents}
-            className="shrink-0 flex items-center gap-1.5 bg-slate-900 text-white px-3 lg:px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md active:scale-95 border border-slate-700 whitespace-nowrap"
+            className="w-full md:w-auto flex justify-center items-center gap-1.5 bg-slate-900 text-white px-3 lg:px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md active:scale-95 border border-slate-700 whitespace-nowrap shrink-0"
           >
             <span className="text-amber-400 text-sm">⚡</span> Acceso Rápido a Eventos
           </button>

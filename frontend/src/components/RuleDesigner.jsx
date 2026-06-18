@@ -67,6 +67,9 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
   const [validating, setValidating] = useState(false); 
   const [testing, setTesting] = useState(false); 
   
+  // 🚀 NUEVO ESTADO: Controla si se ha ejecutado un playground con éxito
+  const [hasTested, setHasTested] = useState(false);
+  
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [viewFullQueryOpen, setViewFullQueryOpen] = useState(false); 
   const [testParams, setTestParams] = useState({ p1: '', p2: '', p3: '', p4: '' });
@@ -236,6 +239,7 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     onClose();
   };
 
+  // 🚀 SE ADICIONA setHasTested(false) A TODAS LAS ACCIONES DE EDICIÓN
   const handleAddCte = () => {
     setCtes([...ctes, { 
       id: Date.now() + Math.random(), 
@@ -244,11 +248,13 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
       isHelp: true 
     }]);
     setIsValidated(false);
+    setHasTested(false);
   };
 
   const handleRemoveCte = (id) => {
     setCtes(ctes.filter(c => c.id !== id));
     setIsValidated(false);
+    setHasTested(false);
   };
 
   const handleCteChange = (id, field, value) => {
@@ -258,12 +264,14 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
       isHelp: field === 'code' ? false : c.isHelp 
     } : c));
     setIsValidated(false);
+    setHasTested(false);
   };
 
   const handleMainBodyChange = (val) => {
     setEditableSql(val);
     setIsBodyHelp(false); 
     setIsValidated(false);
+    setHasTested(false);
   };
 
   const customCompletion = useMemo(() => {
@@ -378,6 +386,9 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
       const res = await api.post('/api/v1/rules/test', { query_sql: testQuery });
       const dataToRender = res.data?.result?.data || res.data?.data || res.data;
       setTestResult({ type: 'success', data: Array.isArray(dataToRender) ? dataToRender : [dataToRender] });
+      
+      // 🚀 SE COMPLETO EL TEST: Activamos la bandera de anclaje habilitado
+      setHasTested(true);
       setTestModalOpen(false);
     } catch (error) {
       const errData = error.response?.data || {};
@@ -395,19 +406,15 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     }
   };
 
-  // 🚀 GUARDARRAÍL BLINDADO CON ALERTAS VISUALES
   const handleSelectRealEvent = (eventoReal) => {
-    
-    // 🛡️ 1. VALIDAR TIPO DE EVENTO (Ej. FullApplicationRT vs NRT)
     const evType = (eventoReal.event_type || '').toLowerCase();
     const rType = (ruleEventType || '').toLowerCase();
     
     if (rType && evType !== rType) {
       alert(`🛑 BLOQUEO DE INYECCIÓN:\n\nEstás diseñando una regla para el flujo [ ${ruleEventType} ], pero seleccionaste un evento del flujo [ ${eventoReal.event_type} ].\n\nPor favor, busca un evento que coincida con el flujo de tu regla para evitar falsos negativos.`);
-      return; // Detenemos la inyección y NO cerramos el modal
+      return;
     }
 
-    // 🛡️ 2. PRE-EXTRACCIÓN DE DATOS PARA VALIDAR ENTIDAD
     const customerId = eventoReal.customer_id || '';
     const appId = eventoReal.application_id || '';
     const payloadRecepcion = eventoReal.payloads?.recepcion || {};
@@ -417,13 +424,11 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     const evEntity = (eventoReal.entity_type || payloadRecepcion.entity_type || payloadRecepcion.entityType || '').toLowerCase();
     const rEntity = (ruleEntityType || '').toLowerCase();
 
-    // 🛡️ 3. VALIDAR ENTIDAD EXPLÍCITA
     if (evEntity && rEntity && evEntity !== rEntity) {
       alert(`🛑 BLOQUEO DE INYECCIÓN:\n\nLa regla evalúa entidades tipo '${ruleEntityType}', pero seleccionaste un evento de '${evEntity}'.`);
       return;
     }
 
-    // 🛡️ 4. VALIDACIÓN POR INFERENCIA (Si la trama es "muda" respecto a su entidad)
     if (!evEntity && rEntity) {
       let hasRequiredId = true;
       if (rEntity === 'customer' && !customerId) hasRequiredId = false;
@@ -436,7 +441,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
       }
     }
 
-    // ✅ Todo en orden, procedemos a inyectar en el banco de pruebas
     setTestParams({
       p1: customerId,
       p2: appId,
@@ -446,6 +450,15 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
 
     setTestResult(null); 
     setEventPickerOpen(false); 
+  };
+
+  // 🚀 CONTROLADOR INTERCEPTOR: Valida el test antes de transferir datos al Form principal
+  const handleApplyAndReturn = () => {
+    if (!hasTested) {
+      alert("⚠️ ACCIÓN REQUERIDA (BLOQUEO DE MOTOR):\n\nNo puedes anclar ni retornar el código al formulario hasta haber realizado una simulación real de Playground exitosa.\n\nPresiona 'Probar Regla' (botón verde si ya validaste sintaxis), inyecta o ingresa tus parámetros y ejecuta la consulta.");
+      return;
+    }
+    onApplySql(assembleFullSql(false, true));
   };
 
   return (
@@ -467,7 +480,10 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
           <button type="button" onClick={() => setViewFullQueryOpen(true)} className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-power-blue border border-slate-700 px-3 py-2 rounded-lg font-bold text-xs md:text-sm flex justify-center items-center gap-1 transition-colors">👁️ Ver Full Query</button>
           <button type="button" onClick={handleValidateCode} disabled={validating} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg font-bold text-xs md:text-sm flex justify-center items-center gap-1 transition-colors disabled:opacity-50">Validar Código</button>
           <button type="button" onClick={() => setTestModalOpen(true)} disabled={!isValidated} className={`flex-1 md:flex-none px-3 py-2 rounded-lg font-bold text-xs md:text-sm flex justify-center items-center gap-1 transition-colors ${isValidated ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'}`}>▶️ Probar Regla</button>
-          <button onClick={() => onApplySql(assembleFullSql(false, true))} className="flex-1 md:flex-none bg-power-purple hover:bg-purple-500 text-white px-3 py-2 rounded-lg font-bold text-xs md:text-sm shadow-md flex justify-center transition-colors">Anclaje y Volver</button>
+          
+          {/* 🚀 BOTÓN MODIFICADO: Ahora llama al interceptor táctico */}
+          <button type="button" onClick={handleApplyAndReturn} className="flex-1 md:flex-none bg-power-purple hover:bg-purple-500 text-white px-3 py-2 rounded-lg font-bold text-xs md:text-sm shadow-md flex justify-center transition-colors">Anclaje y Volver</button>
+          
           <button onClick={handleCloseProtected} className="flex-1 md:flex-none bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-400 px-3 py-2 rounded-lg font-bold text-xs md:text-sm border border-slate-700 flex justify-center">Cerrar</button>
         </div>
       </div>
@@ -507,7 +523,7 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
                         </span>
                       )}
                     </div>
-                    <button type="button" onClick={() => handleRemoveCte(cte.id)} className="text-[10px] text-rose-400 bg-rose-500/10 hover:bg-rose-500 hover:text-white font-bold px-2.5 py-1 rounded transition-all ml-auto sm:ml-0">✕ Eliminar Tabla</button>
+                    <button type="button" onClick={() => handleRemoveCte(cte.id)} className="text-[10px] text-rose-400 bg-rose-50/10 hover:bg-rose-500 hover:text-white font-bold px-2.5 py-1 rounded transition-all ml-auto sm:ml-0">✕ Eliminar Tabla</button>
                   </div>
                   
                   <div className={cte.isHelp ? "is-sql-help" : ""}>
@@ -566,7 +582,7 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
             </div>
           </div>
 
-          {/* 🚀 CONSOLA DE RESULTADOS INTERPRETADA */}
+          {/* CONSOLA DE RESULTADOS */}
           {testResult && (
             <div className="h-48 md:h-64 border-t-4 border-slate-800 bg-slate-950 p-3 md:p-4 shrink-0 overflow-y-auto shadow-inner animate-fade-in">
               <div className="flex justify-between items-start mb-2">

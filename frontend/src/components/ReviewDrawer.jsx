@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../api'; 
-// 🚀 IMPORTACIÓN CRÍTICA: Traemos el módulo forense para el despliegue en paralelo
 import EventsSearch from './EventsSearch';
 
 const traducirEstado = (estado) => {
@@ -32,7 +31,9 @@ const ReviewDrawer = ({
   onAnterior,
   onSiguiente,
   hayAnterior = false,
-  haySiguiente = false
+  haySiguiente = false,
+  isReadOnlyContext = false,
+  targetAlertId = null 
 }) => {
   const [info, setInfo] = useState(null);
   const [alertas, setAlertas] = useState([]);
@@ -54,7 +55,6 @@ const ReviewDrawer = ({
   
   const [esInmutable, setEsInmutable] = useState(false);
 
-  // 🚀 CONTROL DE VISOR PARALELO
   const [showParallelEvents, setShowParallelEvents] = useState(false);
 
   const tengoCandadoRef = useRef(false);
@@ -72,7 +72,6 @@ const ReviewDrawer = ({
       }
     } else {
       lastEstadoRef.current = estadoActual;
-      // 🧹 LIMPIEZA: Si cierran el cajón, reseteamos el visor paralelo
       setShowParallelEvents(false);
     }
   }, [isOpen, estadoActual, onClose]);
@@ -96,9 +95,11 @@ const ReviewDrawer = ({
       const cleanEntityId = String(entityId).trim();
       const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanEntityId);
 
-      let urlEndpoint = `/api/alerts/entity/${cleanEntityId}?status=${estadoActual}`;
+      let queryParams = isReadOnlyContext ? '' : `?status=${estadoActual}`;
+      let urlEndpoint = `/api/alerts/entity/${cleanEntityId}${queryParams}`;
+      
       if (!esUUID) {
-        urlEndpoint = `/api/alerts/dni/${cleanEntityId}?status=${estadoActual}`;
+        urlEndpoint = `/api/alerts/dni/${cleanEntityId}${queryParams}`;
       }
 
       api.get(urlEndpoint)
@@ -118,7 +119,7 @@ const ReviewDrawer = ({
             }
           }
 
-          const alertsFiltered = rawAlerts.filter(al => {
+          const alertsFiltered = isReadOnlyContext ? rawAlerts : rawAlerts.filter(al => {
             const s = al.status || al.estado;
             return !s || String(s).toUpperCase() === String(estadoActual).toUpperCase();
           });
@@ -164,12 +165,19 @@ const ReviewDrawer = ({
               status: statusEntidad
             };
 
-            const alertaPorDefecto = sortedAlerts.find(al =>
-              (al.dni && al.dni === clienteContexto) ||
-              (al.document_number && al.document_number === clienteContexto) ||
-              (al.cliente && al.cliente === clienteContexto) ||
-              (al.full_name && al.full_name === clienteContexto)
-            ) || sortedAlerts[0];
+            let alertaPorDefecto = null;
+            if (targetAlertId) {
+              alertaPorDefecto = sortedAlerts.find(al => al.alert_id === targetAlertId);
+            }
+            
+            if (!alertaPorDefecto) {
+              alertaPorDefecto = sortedAlerts.find(al =>
+                (al.dni && al.dni === clienteContexto) ||
+                (al.document_number && al.document_number === clienteContexto) ||
+                (al.cliente && al.cliente === clienteContexto) ||
+                (al.full_name && al.full_name === clienteContexto)
+              ) || sortedAlerts[0];
+            }
 
             if (alertaPorDefecto) {
               setSelectedAlertId(alertaPorDefecto.alert_id);
@@ -188,7 +196,7 @@ const ReviewDrawer = ({
           setCargando(false);
         });
     }
-  }, [isOpen, entityId, clienteContexto, estadoActual]);
+  }, [isOpen, entityId, clienteContexto, estadoActual, isReadOnlyContext, targetAlertId]);
 
   useEffect(() => {
     seGuardoExitosamenteRef.current = false;
@@ -201,6 +209,13 @@ const ReviewDrawer = ({
       tengoCandadoRef.current = false;
       idCandadoRef.current = null;
       intentoDeLockRef.current = null; 
+      return;
+    }
+
+    if (isReadOnlyContext) {
+      setBloqueadoPorOtro(true);
+      setEsInmutable(true);
+      setMensajeBloqueo('Modo de Inspección Forense: El expediente se abre en modo estricto de solo lectura. No se bloqueará la alerta en BD.');
       return;
     }
 
@@ -254,18 +269,18 @@ const ReviewDrawer = ({
       const idALiberar = idCandadoRef.current;
       const teniaCandado = tengoCandadoRef.current;
       
-      if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current) {
+      if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current && !isReadOnlyContext) {
         api.post(`/api/alerts/${idALiberar}/unlock`).catch(() => null);
       }
     };
-  }, [selectedAlertId, isOpen]);
+  }, [selectedAlertId, isOpen, isReadOnlyContext]);
 
   useEffect(() => {
     const handleUnload = () => {
       const idALiberar = idCandadoRef.current;
       const teniaCandado = tengoCandadoRef.current;
       
-      if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current) {
+      if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current && !isReadOnlyContext) {
         const baseUrl = api.defaults.baseURL || window.location.origin;
         const url = `${baseUrl}/api/alerts/${idALiberar}/unlock`;
         navigator.sendBeacon(url); 
@@ -276,7 +291,7 @@ const ReviewDrawer = ({
     return () => {
       window.removeEventListener('beforeunload', handleUnload);
     };
-  }, []);
+  }, [isReadOnlyContext]);
 
   useEffect(() => {
     if (selectedAlertId) {
@@ -336,6 +351,7 @@ const ReviewDrawer = ({
   const rawTelefonoEncontrado = telefonoNativoEnLista ? (telefonoNativoEnLista.celular || telefonoNativoEnLista.telefono || telefonoNativoEnLista.phone || telefonoNativoEnLista.mobile) : '';
 
   const guardarRevisionMasiva = async () => {
+    if (isReadOnlyContext) return; 
     if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
     if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
     if (cargandoPayload) return alert("Por favor, espera a que cargue la información del evento seleccionado.");
@@ -374,11 +390,11 @@ const ReviewDrawer = ({
     }
   };
 
-  const esSoloLectura = estadoActual === 'DISCARDED' || bloqueadoPorOtro;
+  const esSoloLectura = estadoActual === 'DISCARDED' || bloqueadoPorOtro || isReadOnlyContext;
+  
   const scrollToDictamen = () => { formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const agregarRespuestaRapida = (frase) => { setComentario(prev => prev ? `${prev} - ${frase}` : frase); };
 
-  // 🧠 🌟 CRÍTICO: El DNI apunta SIEMPRE al DNI de la alerta actualmente seleccionada en el historial
   const dniParaParallelLookup = alertaActiva?.dni || alertaActiva?.document_number || info?.id_value || '';
   const appIdParaParallelLookup = payloadData?.application_id || payloadData?.applicationId || '';
 
@@ -393,14 +409,14 @@ const ReviewDrawer = ({
       {/* CONTENEDOR ENVOLVENTE INTEGRAL EN PARALELO */}
       <div className={`fixed inset-0 z-50 flex justify-end overflow-hidden pointer-events-none ${isOpen ? 'visible' : 'invisible'}`}>
 
-        {/* 🚀 EL PANEL COMPAÑERO IZQUIERDO: Despliega el módulo forense en paralelo */}
+        {/* EL PANEL COMPAÑERO IZQUIERDO */}
         {showParallelEvents && (
           <div className="absolute left-0 top-0 h-full bg-gray-50 border-r border-gray-200 shadow-2xl p-4 md:p-6 overflow-y-auto pointer-events-auto z-50 animate-slide-in-left w-full md:w-1/3 lg:w-3/5">
             <EventsSearch 
               isModal={true} 
               onClose={() => setShowParallelEvents(false)} 
-              initialDni={dniParaParallelLookup}       // 👈 Envía el DNI de la alerta activa en caliente
-              initialAppId={appIdParaParallelLookup}   // 👈 Envía el ID de Solicitud en caliente
+              initialDni={dniParaParallelLookup}       
+              initialAppId={appIdParaParallelLookup}   
             />
           </div>
         )}
@@ -408,10 +424,11 @@ const ReviewDrawer = ({
         {/* EL CAJÓN DE REVISIÓN ORIGINAL */}
         <div className={`relative h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl transform transition-transform duration-300 flex flex-col pointer-events-auto z-50 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           
-          <div className="flex justify-between items-center border-b p-3 md:p-5 bg-white shrink-0 z-20 shadow-sm">
-            <h3 className="text-xl font-bold text-power-blue truncate pr-2">Revisión de Entidad</h3>
-            <div className="flex items-center gap-1 md:gap-2 shrink-0">
-              <div className="flex bg-gray-50 rounded-lg p-0.5 border border-gray-200 mr-1 md:mr-2 shadow-sm">
+          {/* 🚀 CABECERA REFACTORIZADA (Permite wrapping flexible sin cortar texto) */}
+          <div className="flex flex-wrap justify-between items-center border-b p-3 md:p-5 bg-white shrink-0 z-20 shadow-sm gap-3">
+            <h3 className="text-xl font-bold text-power-blue whitespace-nowrap shrink-0">Revisión de Entidad</h3>
+            <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 shrink-0 flex-1">
+              <div className="flex bg-gray-50 rounded-lg p-0.5 border border-gray-200 shadow-sm shrink-0">
                 <button onClick={onAnterior} disabled={!hayAnterior} className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95" title="Caso Anterior">
                   <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
                 </button>
@@ -421,10 +438,9 @@ const ReviewDrawer = ({
                 </button>
               </div>
 
-              {/* 🚀 🌟 BOTÓN ACTUALIZADO: "Eventos" */}
               <button 
                 onClick={() => setShowParallelEvents(!showParallelEvents)}
-                className={`text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm border transition-all active:scale-95 ${
+                className={`shrink-0 text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm border transition-all active:scale-95 ${
                   showParallelEvents 
                     ? 'bg-amber-500 text-white border-amber-600' 
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -432,13 +448,14 @@ const ReviewDrawer = ({
                 title="Cruzar tramas JSON de este cliente a la izquierda en tiempo real"
               >
                 <span className={showParallelEvents ? 'text-white' : 'text-amber-500'}>⚡</span> 
-                {showParallelEvents ? 'Ocultar Eventos' : 'Eventos'}
+                {showParallelEvents ? 'Ocultar Eventos' : 'Eventos Cliente'}
               </button>
 
-              <button onClick={scrollToDictamen} className="text-[10px] md:text-xs bg-power-purple/10 text-power-purple px-3 py-1.5 rounded-full font-bold hover:bg-power-purple/20 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-power-purple/20">
+              <button onClick={scrollToDictamen} className="shrink-0 text-[10px] md:text-xs bg-power-purple/10 text-power-purple px-3 py-1.5 rounded-full font-bold hover:bg-power-purple/20 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-power-purple/20">
                 ⬇️ <span className="hidden sm:inline">Dictamen</span>
               </button>
-              <button onClick={onClose} className="text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-xl active:scale-90 w-8 h-8 flex items-center justify-center rounded-full transition-colors ml-1">✕</button>
+              
+              <button onClick={onClose} className="shrink-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-xl active:scale-90 w-8 h-8 flex items-center justify-center rounded-full transition-colors ml-1">✕</button>
             </div>
           </div>
 
@@ -452,17 +469,19 @@ const ReviewDrawer = ({
             <div className="space-y-6">
 
               {bloqueadoPorOtro && (
-                <div className={`border text-xs font-bold p-3.5 rounded-xl flex items-center gap-2.5 shadow-sm animate-fade-in ${
+                <div className={`border p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-3 shadow-sm animate-fade-in ${
                   esInmutable 
-                    ? 'bg-slate-100 border-slate-300 text-slate-800' 
-                    : 'bg-amber-50 border border-amber-200 text-amber-800'
+                    ? 'bg-slate-50 border-slate-200 text-slate-800' 
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
                 }`}>
-                  <span className="text-base">{esInmutable ? '👁️' : '🔒'}</span>
-                  <div>
-                    <p className={`font-black uppercase tracking-wider text-[10px] mb-0.5 ${esInmutable ? 'text-slate-500' : 'text-amber-600'}`}>
+                  <span className="text-2xl shrink-0 leading-none">{esInmutable ? '👁️' : '🔒'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-black uppercase tracking-widest text-[10px] mb-1 ${esInmutable ? 'text-slate-500' : 'text-amber-600'}`}>
                       {esInmutable ? 'Expediente Histórico (Solo Lectura)' : 'Control de Concurrencia'}
                     </p>
-                    <p className="font-medium text-slate-700">{mensajeBloqueo}</p>
+                    <p className="font-medium text-xs sm:text-sm leading-snug break-words">
+                      {mensajeBloqueo}
+                    </p>
                   </div>
                 </div>
               )}
@@ -602,7 +621,7 @@ const ReviewDrawer = ({
                     <div className="space-y-4">
                       <div>
                         <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
-                        <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none disabled:bg-gray-50 disabled:text-gray-400">
+                        <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none disabled:bg-gray-50 disabled:text-gray-400 cursor-not-allowed">
                           {estadoActual === 'OPEN' && <option value="IN_REVIEW">Pasar a En Revisión</option>}
                           {estadoActual === 'IN_REVIEW' && (
                             <>
@@ -626,7 +645,7 @@ const ReviewDrawer = ({
                             ))}
                           </div>
                         )}
-                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none disabled:bg-gray-50 disabled:text-gray-400" placeholder={esSoloLectura ? "Historial bloqueado o sin privilegios de edición..." : "Explica el motivo de tu decisión o usa un botón de arriba..."}></textarea>
+                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none disabled:bg-gray-50 disabled:text-gray-400 cursor-not-allowed" placeholder={esSoloLectura ? (isReadOnlyContext ? "Este expediente ha sido abierto desde el Buscador Forense en modo estrictamente de Solo Lectura." : "Historial bloqueado o sin privilegios de edición...") : "Explica el motivo de tu decisión o usa un botón de arriba..."}></textarea>
                       </div>
 
                       {!esSoloLectura && (

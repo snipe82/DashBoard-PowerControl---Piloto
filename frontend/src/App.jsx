@@ -11,6 +11,7 @@ import UserCreate from './components/UserCreate';
 import RulesList from './components/RulesList';
 import RuleForm from './components/RuleForm';
 import EventsSearch from './components/EventsSearch';
+import RulesWorkflow from './components/RulesWorkflow';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('accessToken'));
@@ -29,7 +30,6 @@ function App() {
 
   const [reglaEnEdicion, setReglaEnEdicion] = useState(null);
   
-  // 🚀 NUEVO ESTADO: Controla el Modal del Acceso Rápido a Eventos
   const [quickEventsOpen, setQuickEventsOpen] = useState(false);
 
   const abrirRevision = useCallback((alertId, clientCtx, entidadesDeLaTabla) => {
@@ -92,6 +92,15 @@ function App() {
     }
   };
 
+  // 🚀 CONTROLADOR DE TRÁFICO INTELIGENTE
+  const handleReturnFromForm = () => {
+    if (reglaEnEdicion?._fromWorkflow) {
+      setVistaActual('RULES_WORKFLOW');
+    } else {
+      setVistaActual('RULES_LIST');
+    }
+  };
+
   return (
     <div className="bg-bg-app text-gray-800 font-sans antialiased h-screen flex overflow-hidden relative">
       {menuAbierto && (
@@ -109,7 +118,6 @@ function App() {
       </div>
 
       <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-50 w-full">
-        {/* 🚀 Pasamos la instrucción de abrir eventos rápidos al Header */}
         <Header 
           moduloActual={moduloActual}
           vistaActual={vistaActual} 
@@ -131,8 +139,11 @@ function App() {
           {moduloActual === 'ANALISIS' && (
             vistaActual === 'RULES_LIST' ? (
               <RulesList onCreateRule={() => { setReglaEnEdicion(null); setVistaActual('RULE_FORM'); }} onEditRule={(rule) => { setReglaEnEdicion(rule); setVistaActual('RULE_FORM'); }} filtros={filtros} />
+            ) : vistaActual === 'RULES_WORKFLOW' ? (
+              <RulesWorkflow onEditRule={(rule) => { setReglaEnEdicion(rule); setVistaActual('RULE_FORM'); }} />
             ) : (
-              <RuleForm ruleToEdit={reglaEnEdicion} onCancel={() => setVistaActual('RULES_LIST')} onSuccess={() => setVistaActual('RULES_LIST')} />
+              // 🚀 APLICAMOS EL CONTROLADOR TANTO AL CANCELAR COMO AL GUARDAR CON ÉXITO
+              <RuleForm ruleToEdit={reglaEnEdicion} onCancel={handleReturnFromForm} onSuccess={handleReturnFromForm} />
             )
           )}
 
@@ -156,12 +167,10 @@ function App() {
         />
       )}
 
-      {/* 🚀 MODAL: ACCESO RÁPIDO A EVENTOS (CAJA NEGRA) */}
       {quickEventsOpen && (
         <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 md:p-6 backdrop-blur-sm animate-fade-in">
           <div className="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col relative overflow-hidden border border-gray-200">
             <div className="flex-1 overflow-y-auto p-4 md:p-6">
-              {/* Le avisamos al componente que se está pintando en un modal */}
               <EventsSearch isModal={true} onClose={() => setQuickEventsOpen(false)} />
             </div>
           </div>

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
+import ReviewDrawer from './ReviewDrawer'; // 🚀 IMPORTACIÓN CORREGIDA: Traemos el Cajón
 
 const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId = '', onSelectEvent = null }) => {
-  // 1. Estados de Búsqueda (V3: Se incorpora alert_code)
   const [searchParams, setSearchParams] = useState({
     dni: initialDni,
     celular: '',
     application_id: initialAppId,
     customer_id: '',
-    alert_code: '', // 🆕 NUEVO FILTRO
+    alert_code: '',
     start_date: '',
     end_date: ''
   });
@@ -18,9 +18,13 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
   const [error, setError] = useState('');
   const [haBuscado, setHaBuscado] = useState(false);
 
-  // Estados del Modal Forense
+  const [filtrosExpandidos, setFiltrosExpandidos] = useState(true);
+
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [activeTab, setActiveTab] = useState('ALERTAS');
+  
+  // ESTADO PARA INSPECCIÓN DE ALERTAS EN MODO SOLO LECTURA
+  const [alertToInspect, setAlertToInspect] = useState(null);
 
   const formatToInput = (dateStr) => {
     if (!dateStr) return '';
@@ -58,11 +62,15 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
     }));
   };
 
-  // Motor unificado de retransmisión
-  const ejecutarBusquedaDirecta = async (params) => {
+  const ejecutarBusquedaDirecta = async (params, isManualSearch = false) => {
     setCargando(true);
     setError('');
     setHaBuscado(true);
+    
+    if (isManualSearch) {
+      setFiltrosExpandidos(false);
+    }
+    
     try {
       const query = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => {
@@ -77,12 +85,14 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
       const msg = err.response?.data?.message || err.response?.data?.error || 'Error al procesar la auditoría temporal.';
       setError(msg);
       setEventos([]);
+      if (isManualSearch) {
+        setFiltrosExpandidos(true); 
+      }
     } finally {
       setCargando(false);
     }
   };
 
-  // Control de contexto de entrada
   useEffect(() => {
     if (initialDni || initialAppId) {
       const paramsCajon = {
@@ -95,7 +105,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
         end_date: ''
       };
       setSearchParams(paramsCajon);
-      ejecutarBusquedaDirecta({ dni: initialDni, application_id: initialAppId });
+      ejecutarBusquedaDirecta({ dni: initialDni, application_id: initialAppId }, false);
     } else {
       const now = new Date();
       const year = now.getFullYear();
@@ -117,7 +127,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
       };
 
       setSearchParams(paramsGenerales);
-      ejecutarBusquedaDirecta({ start_date: defaultStart, end_date: defaultEnd });
+      ejecutarBusquedaDirecta({ start_date: defaultStart, end_date: defaultEnd }, false);
     }
   }, [initialDni, initialAppId]);
 
@@ -140,11 +150,11 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
     setEventos([]);
     setHaBuscado(false);
     setError('');
+    setFiltrosExpandidos(true);
   };
 
   const handleBuscar = (e) => {
     e.preventDefault();
-    // 🚨 REGLA V3: Permite buscar si hay al menos un filtro de los 7
     if (
       !searchParams.dni && !searchParams.celular && 
       !searchParams.application_id && !searchParams.customer_id &&
@@ -154,7 +164,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
       setError('Debes proporcionar al menos un criterio de búsqueda o un rango de fechas explícito.');
       return;
     }
-    ejecutarBusquedaDirecta(searchParams);
+    ejecutarBusquedaDirecta(searchParams, true);
   };
 
   const abrirVisorForense = (evento) => {
@@ -176,7 +186,6 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
           </h2>
           <p className="text-gray-500 text-xs md:text-sm mt-0.5">Inspección pormenorizada de cargas útiles, marcas de tiempo Perú y respuestas de la caja negra.</p>
           
-          {/* DETALLE DEL NÚMERO DE EVENTOS RETORNADOS */}
           {haBuscado && !cargando && (
             <div className="flex flex-wrap gap-2.5 mt-3 animate-fade-in">
               <span className="bg-power-purple/10 text-power-purple border border-power-purple/20 px-3 py-1 rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1.5">
@@ -202,65 +211,85 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
         )}
       </div>
 
-      {/* 🔍 PANEL MULTIFILTRO REPOTENCIADO (Ajustado para 7 inputs fluidos) */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-5 shrink-0">
-        <form onSubmit={handleBuscar} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">DNI Cliente</label>
-              <input type="text" name="dni" value={searchParams.dni} onChange={handleInputChange} placeholder="Ej: 46789012" className="w-full p-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Celular Actual</label>
-              <input type="text" name="celular" value={searchParams.celular} onChange={handleInputChange} placeholder="Ej: 999888777" className="w-full p-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">ID Solicitud (App)</label>
-              <input type="text" name="application_id" value={searchParams.application_id} onChange={handleInputChange} placeholder="Ej: APP-88452" className="w-full p-2 border border-gray-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Customer ID</label>
-              <input type="text" name="customer_id" value={searchParams.customer_id} onChange={handleInputChange} placeholder="Ej: cust-9923..." className="w-full p-2 border border-gray-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
-            </div>
-            
-            {/* 🆕 NUEVO INPUT V3: CÓDIGO DE ALERTA */}
-            <div>
-              <label className="block text-[10px] font-black text-power-purple uppercase tracking-wider mb-1">Cód. Alerta (Regla)</label>
-              <input type="text" name="alert_code" value={searchParams.alert_code} onChange={handleInputChange} placeholder="Ej: RP03" className="w-full p-2 border border-power-purple/30 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-power-purple bg-power-purple/5 focus:bg-white transition-colors" />
-            </div>
+      {/* PANEL MULTIFILTRO CON ACORDEÓN */}
+      <div className="bg-white border border-gray-200 rounded-xl mb-6 shadow-sm overflow-hidden transition-all shrink-0">
+        
+        <div 
+          className="px-5 py-3 bg-slate-50 border-b border-gray-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
+          onClick={() => setFiltrosExpandidos(!filtrosExpandidos)}
+        >
+          <span className="text-[11px] font-black text-power-blue uppercase tracking-widest flex items-center gap-2">
+            <span>🔍</span> Parámetros de Auditoría Forense
+          </span>
+          <button type="button" className="text-slate-500 font-bold text-xs bg-white px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 transition-colors flex items-center gap-1">
+            {filtrosExpandidos ? (
+              <>Contraer <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7"></path></svg></>
+            ) : (
+              <>Expandir <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg></>
+            )}
+          </button>
+        </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Fecha/Hora Desde</label>
-              <input type="datetime-local" name="start_date" value={formatToInput(searchParams.start_date)} onChange={handleDateTimeChange} className="w-full p-2 border border-gray-200 rounded-xl text-xs font-sans outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors text-gray-700 font-bold" />
-              <div className="flex items-center justify-between gap-1 mt-1.5 px-0.5">
-                <button type="button" onClick={() => shiftTime('start_date', -60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 1 hora">-1h</button>
-                <button type="button" onClick={() => shiftTime('start_date', -15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 15 minutos">-15m</button>
-                <button type="button" onClick={() => shiftTime('start_date', 15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 15 minutos">+15m</button>
-                <button type="button" onClick={() => shiftTime('start_date', 60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 1 hora">+1h</button>
+        {filtrosExpandidos && (
+          <div className="p-5 animate-fade-in">
+            <form onSubmit={handleBuscar} className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">DNI Cliente</label>
+                  <input type="text" name="dni" value={searchParams.dni} onChange={handleInputChange} placeholder="Ej: 46789012" className="w-full p-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Celular Actual</label>
+                  <input type="text" name="celular" value={searchParams.celular} onChange={handleInputChange} placeholder="Ej: 999888777" className="w-full p-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">ID Solicitud (App)</label>
+                  <input type="text" name="application_id" value={searchParams.application_id} onChange={handleInputChange} placeholder="Ej: APP-88452" className="w-full p-2 border border-gray-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Customer ID</label>
+                  <input type="text" name="customer_id" value={searchParams.customer_id} onChange={handleInputChange} placeholder="Ej: cust-9923..." className="w-full p-2 border border-gray-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors" />
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-black text-power-purple uppercase tracking-wider mb-1">Cód. Alerta (Regla)</label>
+                  <input type="text" name="alert_code" value={searchParams.alert_code} onChange={handleInputChange} placeholder="Ej: RP03" className="w-full p-2 border border-power-purple/30 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-power-purple bg-power-purple/5 focus:bg-white transition-colors" />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Fecha/Hora Desde</label>
+                  <input type="datetime-local" name="start_date" value={formatToInput(searchParams.start_date)} onChange={handleDateTimeChange} className="w-full p-2 border border-gray-200 rounded-xl text-xs font-sans outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors text-gray-700 font-bold" />
+                  <div className="flex items-center justify-between gap-1 mt-1.5 px-0.5">
+                    <button type="button" onClick={() => shiftTime('start_date', -60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 1 hora">-1h</button>
+                    <button type="button" onClick={() => shiftTime('start_date', -15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 15 minutos">-15m</button>
+                    <button type="button" onClick={() => shiftTime('start_date', 15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 15 minutos">+15m</button>
+                    <button type="button" onClick={() => shiftTime('start_date', 60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 1 hora">+1h</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Fecha/Hora Hasta</label>
+                  <input type="datetime-local" name="end_date" value={formatToInput(searchParams.end_date)} onChange={handleDateTimeChange} className="w-full p-2 border border-gray-200 rounded-xl text-xs font-sans outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors text-gray-700 font-bold" />
+                  <div className="flex items-center justify-between gap-1 mt-1.5 px-0.5">
+                    <button type="button" onClick={() => shiftTime('end_date', -60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 1 hora">-1h</button>
+                    <button type="button" onClick={() => shiftTime('end_date', -15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 15 minutos">-15m</button>
+                    <button type="button" onClick={() => shiftTime('end_date', 15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 15 minutos">+15m</button>
+                    <button type="button" onClick={() => shiftTime('end_date', 60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 1 hora">+1h</button>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Fecha/Hora Hasta</label>
-              <input type="datetime-local" name="end_date" value={formatToInput(searchParams.end_date)} onChange={handleDateTimeChange} className="w-full p-2 border border-gray-200 rounded-xl text-xs font-sans outline-none focus:ring-2 focus:ring-power-purple bg-gray-50 focus:bg-white transition-colors text-gray-700 font-bold" />
-              <div className="flex items-center justify-between gap-1 mt-1.5 px-0.5">
-                <button type="button" onClick={() => shiftTime('end_date', -60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 1 hora">-1h</button>
-                <button type="button" onClick={() => shiftTime('end_date', -15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Restar 15 minutos">-15m</button>
-                <button type="button" onClick={() => shiftTime('end_date', 15)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 15 minutos">+15m</button>
-                <button type="button" onClick={() => shiftTime('end_date', 60)} className="text-[9px] font-black text-gray-500 bg-gray-100 hover:bg-slate-200 px-1 py-0.5 rounded transition-colors" title="Sumar 1 hora">+1h</button>
+              {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 px-4 py-2 rounded-xl text-xs font-bold animate-fade-in mt-2">🛑 {error}</div>}
+
+              <div className="flex justify-end gap-2.5 mt-2 pt-5 border-t border-gray-100">
+                <button type="button" onClick={limpiarBusqueda} className="px-4 py-2 rounded-xl font-bold text-gray-500 hover:bg-gray-100 text-xs transition-colors active:scale-95">Limpiar</button>
+                <button type="submit" disabled={cargando} className="px-6 py-2 rounded-xl font-bold bg-power-purple text-white text-xs shadow-sm transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
+                  {cargando ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '🔍 Ejecutar Auditoría'}
+                </button>
               </div>
-            </div>
+            </form>
           </div>
-
-          {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 px-4 py-2 rounded-xl text-xs font-bold animate-fade-in">🛑 {error}</div>}
-
-          <div className="flex justify-end gap-2.5 pt-2 border-t border-gray-100">
-            <button type="button" onClick={limpiarBusqueda} className="px-4 py-2 rounded-xl font-bold text-gray-500 hover:bg-gray-100 text-xs transition-colors active:scale-95">Limpiar</button>
-            <button type="submit" disabled={cargando} className="px-6 py-2 rounded-xl font-bold bg-power-purple text-white text-xs shadow-sm transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
-              {cargando ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '🔍 Ejecutar Auditoría'}
-            </button>
-          </div>
-        </form>
+        )}
       </div>
 
       {/* GRILLA PRINCIPAL */}
@@ -410,11 +439,12 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                             <th className="px-4 py-2.5">Código de Regla</th>
                             <th className="px-4 py-2.5">Estado Actual</th>
                             <th className="px-4 py-2.5">Fecha Captura (UTC)</th>
+                            <th className="px-4 py-2.5 text-right">Acción</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-gray-700 font-medium">
                           {selectedEvent.alerts_summary.details.map((al, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50">
+                            <tr key={idx} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-2.5 font-mono text-gray-500 font-bold">#{al.alert_id}</td>
                               <td className="px-4 py-2.5 font-black text-power-purple">{al.rule_code}</td>
                               <td className="px-4 py-2.5">
@@ -423,6 +453,14 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                                 </span>
                               </td>
                               <td className="px-4 py-2.5 text-gray-400 font-mono">{al.created_at}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <button 
+                                  onClick={() => setAlertToInspect(al)}
+                                  className="text-[10px] font-black bg-power-blue text-white px-3 py-1.5 rounded-lg hover:bg-power-blue/90 transition-colors shadow-sm active:scale-95"
+                                >
+                                  🔍 Inspeccionar
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -456,6 +494,22 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
           </div>
         </div>
       )}
+
+     {/* 🚀 RENDERIZADO DEL CAJÓN DE REVISIÓN EN MODO SOLO LECTURA FORENSE */}
+     {alertToInspect && (
+        <div className="relative z-[300]">
+          <ReviewDrawer 
+            isOpen={!!alertToInspect} 
+            onClose={() => setAlertToInspect(null)} 
+            // 🚀 CORRECCIÓN: Pasamos el DNI o Customer ID del evento, no el ID de la alerta
+            alertId={selectedEvent?.customer_id || selectedEvent?.customer_details?.dni}
+            estadoActual={alertToInspect.status || 'OPEN'}
+            isReadOnlyContext={true}
+            targetAlertId={alertToInspect.alert_id} // 🚀 Le decimos qué alerta exacta enfocar
+          />
+        </div>
+      )}
+
     </div>
   );
 };

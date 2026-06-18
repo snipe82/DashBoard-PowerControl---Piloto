@@ -58,7 +58,9 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
   ];
 
   const menuAnalisis = [
-    { id: 'RULES_LIST', label: 'Motor de Reglas SQL', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg> }
+    { id: 'RULES_LIST', label: 'Motor de Reglas SQL', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg> },
+    // 🚀 NUEVO: Item de Gestión de Publicación
+    { id: 'RULES_WORKFLOW', label: 'Gestión de Publicación', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg> }
   ];
 
   const menuEventos = [
@@ -70,7 +72,6 @@ const Sidebar = ({ moduloActual, setModuloActual, vistaActual, setVistaActual, o
     { id: 'USER_CREATE', label: 'Crear Nuevo Usuario', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg> },
   ];
 
-  // 🚀 EVALUACIÓN EXACTA SIN "DESCARTES"
   const menuActivo = moduloActual === 'ALERTAS' 
     ? menuAlertas 
     : moduloActual === 'ANALISIS' 

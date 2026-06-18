@@ -232,8 +232,9 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // ==========================================
-// 🛠️ 4. RUTAS DEL MÓDULO DE ANÁLISIS (REGLAS V2)
+// 🛠️ 4. RUTAS DEL MÓDULO DE ANÁLISIS (REGLAS V2 - CICLO DE VIDA)
 // ==========================================
+// Mantenemos la ruta base
 app.get('/api/v1/rules', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, { headers: getHeaders(req) });
@@ -242,9 +243,19 @@ app.get('/api/v1/rules', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-app.post('/api/v1/rules', async (req, res) => {
+// 🚀 NUEVO: Obtener la última versión de trabajo (Punta de lanza)
+app.get('/api/v1/rules/latest', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/latest`, { headers: getHeaders(req) });
+        if (response.status === 401) return res.status(401).json({ error: 'Token expirado' });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+// 🚀 NUEVO: Crear un borrador (Draft)
+app.post('/api/v1/rules/:ruleCode/draft', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/draft`, {
             method: 'POST',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
@@ -253,6 +264,30 @@ app.post('/api/v1/rules', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
+// 🚀 NUEVO: Cambiar etapa en el ciclo de vida (Avanzar embudo)
+app.put('/api/v1/rules/:ruleCode/status', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/status`, {
+            method: 'PUT',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+// 🚀 NUEVO: Restaurar una versión antigua (Rollback)
+app.post('/api/v1/rules/:ruleCode/restore/:versionNumber', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/restore/${req.params.versionNumber}`, {
+            method: 'POST',
+            headers: getHeaders(req)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+// Mantengo las rutas de testeo y diccionario de siempre
 app.get('/api/v1/rules/dictionary', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/dictionary`, { headers: getHeaders(req) });
@@ -271,7 +306,6 @@ app.post('/api/v1/rules/test', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// ⚔️ El pasaporte del Linter del Diseñador SQL
 app.post('/api/v1/rules/validate', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/validate`, {
@@ -297,6 +331,19 @@ app.get('/api/v1/rules/:ruleCode', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
+// LOS SIGUIENTES ENDPOINTS YA NO EXISTEN EN EL BACKEND V2 PERO LOS DEJO APUNTANDO A LA API ORIGINAL
+// PARA QUE REBOTEN EL 404 DE MANERA CORRECTA COMO DICTA EL CONTRATO.
+app.post('/api/v1/rules', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
 app.put('/api/v1/rules/:ruleCode', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}`, {
@@ -318,6 +365,7 @@ app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
+
 
 // ==========================================
 // 🔎 5. NUEVO MÓDULO: BUSCADOR DE EVENTOS TRANSACCIONALES (CAJA NEGRA)
