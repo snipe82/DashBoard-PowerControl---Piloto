@@ -58,7 +58,143 @@ const PARAMS_STATIC_TABLE = {
   ]
 };
 
-const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, onClose }) => {
+const parseSqlString = (sqlInput, isFromAI = false) => {
+  let cleanSql = (sqlInput || '').trim();
+  
+  if (!isFromAI) {
+    const isNewRule = cleanSql === '' || (cleanSql.includes('fact_application fa') && !cleanSql.includes('NOT EXISTS'));
+    if (isNewRule) {
+      return { ctes: [], body: HELP_BODY_CODE, isNew: true };
+    }
+  }
+  
+  // 🚀 MEJORA: Poda profunda y agresiva del bloque 'params' para evitar duplicados
+  let lowerSqlCheck = cleanSql.toLowerCase();
+  if (lowerSqlCheck.startsWith('with params as')) {
+    const firstParen = cleanSql.indexOf('(');
+    if (firstParen !== -1) {
+      let depth = 1;
+      let i = firstParen + 1;
+      while (i < cleanSql.length && depth > 0) {
+        if (cleanSql[i] === '(') depth++;
+        if (cleanSql[i] === ')') depth--;
+        i++;
+      }
+      // Cortamos el WITH params AS (...)
+      cleanSql = cleanSql.substring(i).trim();
+      
+      // Si después del bloque params hay una coma (ej: `, otra_tabla AS`), quitamos la coma y restauramos el WITH
+      if (cleanSql.startsWith(',')) {
+        cleanSql = 'WITH ' + cleanSql.substring(1).trim();
+      }
+    }
+  }
+
+  let depth = 0;
+  let mainSelectIdx = -1;
+  let lower = cleanSql.toLowerCase();
+  
+  for (let i = 0; i < cleanSql.length; i++) {
+    if (cleanSql[i] === '(') depth++;
+    else if (cleanSql[i] === ')') depth--;
+    else if (depth === 0) {
+      if (lower.substring(i).startsWith('select')) {
+        let hasMoreCtes = false;
+        let innerDepth = 0;
+        for (let j = i; j < cleanSql.length; j++) {
+          if (cleanSql[j] === '(') innerDepth++;
+          if (cleanSql[j] === ')') innerDepth--;
+          if (innerDepth === 0) {
+            if (lower.substring(j).startsWith('as')) {
+              if (lower.substring(j).replace(/\s+/g, '').startsWith('as(')) {
+                hasMoreCtes = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!hasMoreCtes) {
+          mainSelectIdx = i;
+          break;
+        }
+      }
+    }
+  }
+
+  let extractedCtes = [];
+  let extractedBody = '';
+
+  if (mainSelectIdx !== -1) {
+    const ctesPart = cleanSql.substring(0, mainSelectIdx).trim();
+    const mainPart = cleanSql.substring(mainSelectIdx).trim();
+
+    let cleanCtesPart = ctesPart.trim();
+    if (cleanCtesPart.toUpperCase().startsWith('WITH')) {
+        cleanCtesPart = cleanCtesPart.substring(4).trim();
+    }
+    if (cleanCtesPart.startsWith(',')) cleanCtesPart = cleanCtesPart.substring(1).trim();
+    
+    let idx = 0;
+    while (idx < cleanCtesPart.length) {
+      const remaining = cleanCtesPart.substring(idx);
+      const cteRegex = /\b([a-zA-Z0-9_]+)\s+\bas\b\s*\(/i;
+      const match = cteRegex.exec(remaining);
+      
+      if (match) {
+        const nameToken = match[1];
+        const matchOffset = match.index;
+        const openParenOffset = match[0].indexOf('(');
+        
+        let startCodeIdx = idx + matchOffset + openParenOffset + 1;
+        let parenCount = 1;
+        let j = startCodeIdx;
+        while (j < cleanCtesPart.length && parenCount > 0) {
+          if (cleanCtesPart[j] === '(') parenCount++;
+          if (cleanCtesPart[j] === ')') parenCount--;
+          j++;
+        }
+        const codeToken = cleanCtesPart.substring(startCodeIdx, j - 1).trim();
+        if (nameToken && nameToken.toLowerCase() !== 'params') {
+          extractedCtes.push({
+            id: Date.now() + Math.random() + idx,
+            name: nameToken,
+            code: codeToken,
+            isHelp: false 
+          });
+        }
+        idx = j;
+      } else {
+        break; 
+      }
+    }
+
+    let mainLower = mainPart.toLowerCase();
+    let fromIdx = -1;
+    let mainDepth = 0;
+    for (let k = 0; k < mainPart.length; k++) {
+      if (mainPart[k] === '(') mainDepth++;
+      if (mainPart[k] === ')') mainDepth--;
+      if (mainDepth === 0) {
+        if (mainLower.substring(k).startsWith('from')) {
+          fromIdx = k;
+          break;
+        }
+      }
+    }
+    if (fromIdx !== -1) extractedBody = mainPart.substring(fromIdx + 4).trim();
+    else extractedBody = mainPart;
+
+  } else if (cleanSql.length > 0) {
+    let cleanLower = cleanSql.toLowerCase();
+    let fIdx = cleanLower.indexOf('from');
+    if (fIdx !== -1) extractedBody = cleanSql.substring(fIdx + 4).trim();
+    else extractedBody = cleanSql;
+  }
+
+  return { ctes: extractedCtes, body: extractedBody, isNew: false };
+};
+
+const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, ruleDescription, onApplySql, onClose }) => {
   const [dictionary, setDictionary] = useState([]);
   const [openTable, setOpenTable] = useState(null);
   const [copiedItem, setCopiedItem] = useState(null);
@@ -67,7 +203,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
   const [validating, setValidating] = useState(false); 
   const [testing, setTesting] = useState(false); 
   
-  // 🚀 NUEVO ESTADO: Controla si se ha ejecutado un playground con éxito
   const [hasTested, setHasTested] = useState(false);
   
   const [testModalOpen, setTestModalOpen] = useState(false);
@@ -78,139 +213,31 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
 
   const [eventPickerOpen, setEventPickerOpen] = useState(false);
 
-  const parsedInitialData = useMemo(() => {
-    let cleanSql = (initialSql || '').trim();
-    
-    const isNewRule = cleanSql === '' || (cleanSql.includes('fact_application fa') && !cleanSql.includes('NOT EXISTS'));
+  const parsedInitialData = useMemo(() => parseSqlString(initialSql, false), [initialSql]);
+  
+  const [prompt, setPrompt] = useState(() => {
+    const desc = ruleDescription?.trim() || '';
+    const baseText = 'Genera una regla que alerte cuando ';
+    return desc ? `${baseText}${desc}` : baseText;
+  });
 
-    if (isNewRule) {
-      return { ctes: [], body: HELP_BODY_CODE, isNew: true };
-    }
-    
-    if (cleanSql.toLowerCase().startsWith('with params as')) {
-      const firstParen = cleanSql.indexOf('(');
-      if (firstParen !== -1) {
-        let depth = 1;
-        let i = firstParen + 1;
-        while (i < cleanSql.length && depth > 0) {
-          if (cleanSql[i] === '(') depth++;
-          if (cleanSql[i] === ')') depth--;
-          i++;
-        }
-        cleanSql = cleanSql.substring(i).trim();
-      }
-    }
-    if (cleanSql.startsWith(',')) cleanSql = cleanSql.substring(1).trim();
-
-    let depth = 0;
-    let mainSelectIdx = -1;
-    let lower = cleanSql.toLowerCase();
-    
-    for (let i = 0; i < cleanSql.length; i++) {
-      if (cleanSql[i] === '(') depth++;
-      else if (cleanSql[i] === ')') depth--;
-      else if (depth === 0) {
-        if (lower.substring(i).startsWith('select')) {
-          let hasMoreCtes = false;
-          let innerDepth = 0;
-          for (let j = i; j < cleanSql.length; j++) {
-            if (cleanSql[j] === '(') innerDepth++;
-            if (cleanSql[j] === ')') innerDepth--;
-            if (innerDepth === 0) {
-              if (lower.substring(j).startsWith('as')) {
-                if (lower.substring(j).replace(/\s+/g, '').startsWith('as(')) {
-                  hasMoreCtes = true;
-                  break;
-                }
-              }
-            }
-          }
-          if (!hasMoreCtes) {
-            mainSelectIdx = i;
-            break;
-          }
-        }
-      }
-    }
-
-    let extractedCtes = [];
-    let extractedBody = '';
-
-    if (mainSelectIdx !== -1) {
-      const ctesPart = cleanSql.substring(0, mainSelectIdx).trim();
-      const mainPart = cleanSql.substring(mainSelectIdx).trim();
-
-      let cleanCtesPart = ctesPart.trim();
-      if (cleanCtesPart.startsWith(',')) cleanCtesPart = cleanCtesPart.substring(1).trim();
-      
-      let idx = 0;
-      while (idx < cleanCtesPart.length) {
-        const remaining = cleanCtesPart.substring(idx);
-        const cteRegex = /\b([a-zA-Z0-9_]+)\s+\bas\b\s*\(/i;
-        const match = cteRegex.exec(remaining);
-        
-        if (match) {
-          const nameToken = match[1];
-          const matchOffset = match.index;
-          const openParenOffset = match[0].indexOf('(');
-          
-          let startCodeIdx = idx + matchOffset + openParenOffset + 1;
-          let parenCount = 1;
-          let j = startCodeIdx;
-          while (j < cleanCtesPart.length && parenCount > 0) {
-            if (cleanCtesPart[j] === '(') parenCount++;
-            if (cleanCtesPart[j] === ')') parenCount--;
-            j++;
-          }
-          const codeToken = cleanCtesPart.substring(startCodeIdx, j - 1).trim();
-          if (nameToken) {
-            extractedCtes.push({
-              id: Date.now() + Math.random() + idx,
-              name: nameToken,
-              code: codeToken,
-              isHelp: false 
-            });
-          }
-          idx = j;
-        } else {
-          break; 
-        }
-      }
-
-      let mainLower = mainPart.toLowerCase();
-      let fromIdx = -1;
-      let mainDepth = 0;
-      for (let k = 0; k < mainPart.length; k++) {
-        if (mainPart[k] === '(') mainDepth++;
-        if (mainPart[k] === ')') mainDepth--;
-        if (mainDepth === 0) {
-          if (mainLower.substring(k).startsWith('from')) {
-            fromIdx = k;
-            break;
-          }
-        }
-      }
-      if (fromIdx !== -1) extractedBody = mainPart.substring(fromIdx + 4).trim();
-      else extractedBody = mainPart;
-
-    } else if (cleanSql.length > 0) {
-      let cleanLower = cleanSql.toLowerCase();
-      let fIdx = cleanLower.indexOf('from');
-      if (fIdx !== -1) extractedBody = cleanSql.substring(fIdx + 4).trim();
-      else extractedBody = cleanSql;
-    }
-
-    return { ctes: extractedCtes, body: extractedBody, isNew: isNewRule };
-  }, [initialSql]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuccess, setAiSuccess] = useState(false);
+  const [backupState, setBackupState] = useState(null); 
 
   const [ctes, setCtes] = useState(parsedInitialData.ctes);
   const [editableSql, setEditableSql] = useState(parsedInitialData.body);
   const [isBodyHelp, setIsBodyHelp] = useState(parsedInitialData.isNew); 
 
+  const isModifyMode = editableSql.trim().length > 0 && editableSql.trim() !== HELP_BODY_CODE.trim();
+
   useEffect(() => {
     api.get('/api/v1/rules/dictionary')
       .then(res => {
-        const rawData = res.data || [];
+        let rawData = res.data?.data || res.data || [];
+        if (!Array.isArray(rawData)) rawData = [];
+        
         setDictionary([PARAMS_STATIC_TABLE, ...rawData]);
       })
       .catch(err => {
@@ -239,7 +266,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     onClose();
   };
 
-  // 🚀 SE ADICIONA setHasTested(false) A TODAS LAS ACCIONES DE EDICIÓN
   const handleAddCte = () => {
     setCtes([...ctes, { 
       id: Date.now() + Math.random(), 
@@ -249,12 +275,14 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     }]);
     setIsValidated(false);
     setHasTested(false);
+    if (aiSuccess) setAiSuccess(false);
   };
 
   const handleRemoveCte = (id) => {
     setCtes(ctes.filter(c => c.id !== id));
     setIsValidated(false);
     setHasTested(false);
+    if (aiSuccess) setAiSuccess(false);
   };
 
   const handleCteChange = (id, field, value) => {
@@ -265,6 +293,7 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     } : c));
     setIsValidated(false);
     setHasTested(false);
+    if (aiSuccess) setAiSuccess(false);
   };
 
   const handleMainBodyChange = (val) => {
@@ -272,6 +301,106 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     setIsBodyHelp(false); 
     setIsValidated(false);
     setHasTested(false);
+    if (aiSuccess) setAiSuccess(false);
+  };
+
+  const assembleFullSql = (includeParamsHeader = true, isExportingToParent = false) => {
+    let sqlStr = includeParamsHeader ? MANDATORY_HEADER : "";
+    const activeCtes = isExportingToParent ? ctes.filter(c => !c.isHelp) : ctes;
+
+    if (activeCtes.length > 0) {
+      sqlStr += ",\n";
+      sqlStr += activeCtes.map((cte, idx) => {
+        const isLast = idx === activeCtes.length - 1;
+        return `${cte.name} AS (\n  ${cte.code || 'SELECT 1'}\n)${isLast ? '' : ','}`;
+      }).join('\n');
+      sqlStr += "\n";
+    } else {
+      sqlStr += "\n";
+    }
+    
+    const finalBodyText = (isExportingToParent && isBodyHelp) ? CLEAN_PRODUCTION_BODY : (editableSql || 'SELECT 1');
+    sqlStr += `${LOCKED_SELECT_FROM} ${finalBodyText}`;
+    return sqlStr;
+  };
+
+  const handleGenerateAI = async () => {
+    if (!prompt.trim()) {
+      setAiError('Debes escribir un requerimiento en la caja de texto.');
+      return;
+    }
+    setIsGenerating(true);
+    setAiError('');
+    setAiSuccess(false); 
+
+    const endpoint = isModifyMode ? '/api/v1/rules/ai/modify' : '/api/v1/rules/ai/generate';
+    const payload = isModifyMode 
+      ? { instructions: prompt, existingSql: assembleFullSql(true, false) }
+      : { prompt: prompt, baseSql: MANDATORY_HEADER };
+
+    try {
+      const res = await api.post(endpoint, payload);
+      const returnedSql = res.data?.sql || res.data?.data?.sql || res.data?.result?.sql;
+      
+      if (returnedSql && res.data?.success !== false) {
+        let cleanSql = returnedSql.trim();
+        
+        const bt = String.fromCharCode(96, 96, 96);
+        const btSql = bt + 'sql';
+
+        const lowerSql = cleanSql.toLowerCase();
+        if (lowerSql.startsWith(btSql)) {
+            cleanSql = cleanSql.substring(6);
+        } else if (cleanSql.startsWith(bt)) {
+            cleanSql = cleanSql.substring(3);
+        }
+        if (cleanSql.endsWith(bt)) {
+            cleanSql = cleanSql.substring(0, cleanSql.length - 3);
+        }
+        cleanSql = cleanSql.trim();
+
+        const parsedAI = parseSqlString(cleanSql, true);
+        
+        setBackupState({ ctes: [...ctes], body: editableSql, isBodyHelp });
+
+        setCtes(parsedAI.ctes);
+        setEditableSql(parsedAI.body);
+        setIsBodyHelp(false);
+        setIsValidated(false);
+        setHasTested(false);
+        setPrompt(''); 
+        setAiSuccess(true); 
+      } else {
+        setAiError('La API respondió, pero no se encontró la llave "sql" en el JSON. Revisa la consola (F12).');
+      }
+    } catch (error) {
+      const status = error.response?.status || 'Red/Desconocido';
+      const msg = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail;
+
+      if (status === 429) {
+        setAiError('Has excedido el límite de peticiones gratuitas de Inteligencia Artificial por ahora. Intenta de nuevo en un minuto.');
+      } else if (status === 503) {
+        setAiError('El asistente de IA está experimentando alta demanda global en este momento. Por favor, espera unos segundos. ⏳');
+      } else if (status === 400) {
+        setAiError(msg || `Faltan parámetros obligatorios en la petición (HTTP 400).`);
+      } else {
+        setAiError(`🛑 Falla en el Backend (HTTP ${status}): ${msg || `Revisa si la ruta "${endpoint}" está desplegada y funcionando en el servidor.`}`);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleRevertAI = () => {
+    if (backupState) {
+      setCtes(backupState.ctes);
+      setEditableSql(backupState.body);
+      setIsBodyHelp(backupState.isBodyHelp);
+      setBackupState(null);
+      setAiSuccess(false);
+      setIsValidated(false);
+      setHasTested(false);
+    }
   };
 
   const customCompletion = useMemo(() => {
@@ -299,26 +428,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
       return { from: word.from, options: options, validFor: /^\w*$/ };
     };
   }, [dictionary, ctes]);
-
-  const assembleFullSql = (includeParamsHeader = true, isExportingToParent = false) => {
-    let sqlStr = includeParamsHeader ? MANDATORY_HEADER : "";
-    const activeCtes = isExportingToParent ? ctes.filter(c => !c.isHelp) : ctes;
-
-    if (activeCtes.length > 0) {
-      sqlStr += ",\n";
-      sqlStr += activeCtes.map((cte, idx) => {
-        const isLast = idx === activeCtes.length - 1;
-        return `${cte.name} AS (\n  ${cte.code || 'SELECT 1'}\n)${isLast ? '' : ','}`;
-      }).join('\n');
-      sqlStr += "\n";
-    } else {
-      sqlStr += "\n";
-    }
-    
-    const finalBodyText = (isExportingToParent && isBodyHelp) ? CLEAN_PRODUCTION_BODY : (editableSql || 'SELECT 1');
-    sqlStr += `${LOCKED_SELECT_FROM} ${finalBodyText}`;
-    return sqlStr;
-  };
 
   const handleCopy = (e, text) => {
     e.stopPropagation(); 
@@ -387,7 +496,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
       const dataToRender = res.data?.result?.data || res.data?.data || res.data;
       setTestResult({ type: 'success', data: Array.isArray(dataToRender) ? dataToRender : [dataToRender] });
       
-      // 🚀 SE COMPLETO EL TEST: Activamos la bandera de anclaje habilitado
       setHasTested(true);
       setTestModalOpen(false);
     } catch (error) {
@@ -452,7 +560,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
     setEventPickerOpen(false); 
   };
 
-  // 🚀 CONTROLADOR INTERCEPTOR: Valida el test antes de transferir datos al Form principal
   const handleApplyAndReturn = () => {
     if (!hasTested) {
       alert("⚠️ ACCIÓN REQUERIDA (BLOQUEO DE MOTOR):\n\nNo puedes anclar ni retornar el código al formulario hasta haber realizado una simulación real de Playground exitosa.\n\nPresiona 'Probar Regla' (botón verde si ya validaste sintaxis), inyecta o ingresa tus parámetros y ejecuta la consulta.");
@@ -481,7 +588,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
           <button type="button" onClick={handleValidateCode} disabled={validating} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg font-bold text-xs md:text-sm flex justify-center items-center gap-1 transition-colors disabled:opacity-50">Validar Código</button>
           <button type="button" onClick={() => setTestModalOpen(true)} disabled={!isValidated} className={`flex-1 md:flex-none px-3 py-2 rounded-lg font-bold text-xs md:text-sm flex justify-center items-center gap-1 transition-colors ${isValidated ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'}`}>▶️ Probar Regla</button>
           
-          {/* 🚀 BOTÓN MODIFICADO: Ahora llama al interceptor táctico */}
           <button type="button" onClick={handleApplyAndReturn} className="flex-1 md:flex-none bg-power-purple hover:bg-purple-500 text-white px-3 py-2 rounded-lg font-bold text-xs md:text-sm shadow-md flex justify-center transition-colors">Anclaje y Volver</button>
           
           <button onClick={handleCloseProtected} className="flex-1 md:flex-none bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-400 px-3 py-2 rounded-lg font-bold text-xs md:text-sm border border-slate-700 flex justify-center">Cerrar</button>
@@ -493,13 +599,89 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
         <div className="flex-1 flex flex-col bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 relative min-h-[40vh]">
           <div className="flex-1 overflow-y-auto p-2 md:p-4 space-y-3">
             
+            {/* 🤖 PANEL DE ASISTENCIA IA DUAL */}
+            <div className="border border-power-purple/30 bg-gradient-to-r from-power-purple/5 to-transparent rounded-xl p-4 md:p-5 shadow-sm mb-3">
+              <div className="flex items-start gap-3">
+                <div className="bg-power-purple text-white p-2 rounded-xl shadow-md shrink-0 mt-1">
+                  <span className="text-xl">{isModifyMode ? '🪄' : '🤖'}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-black text-power-blue uppercase tracking-wider mb-2 flex items-center gap-2">
+                    Copiloto de Inteligencia Artificial
+                    <span className="bg-power-purple/10 text-power-purple border border-power-purple/20 px-2 py-0.5 rounded text-[9px]">BETA</span>
+                    
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold shadow-sm ${isModifyMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
+                      {isModifyMode ? 'MODO: REFACTORIZACIÓN' : 'MODO: CREACIÓN'}
+                    </span>
+                  </h3>
+
+                  <div className="flex flex-col md:flex-row gap-3 items-end">
+                    <textarea 
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      disabled={isGenerating}
+                      placeholder="Ej: Alertar si el cliente ha solicitado más de 3 créditos en las últimas 24 horas."
+                      className="w-full h-20 p-3 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none disabled:opacity-50 shadow-inner custom-scrollbar"
+                    ></textarea>
+                    
+                    <button 
+                      onClick={handleGenerateAI}
+                      disabled={isGenerating || !prompt.trim()}
+                      className={`shrink-0 w-full md:w-auto text-white font-bold px-6 py-3 rounded-xl transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed h-full min-h-[50px] ${
+                        isModifyMode ? 'bg-amber-600 hover:bg-amber-500' : 'bg-power-blue hover:bg-blue-600'
+                      }`}
+                    >
+                      {isGenerating ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <span>{isModifyMode ? 'Analizando...' : 'Diseñando...'}</span>
+                        </>
+                      ) : (
+                        <><span>{isModifyMode ? '🪄' : '✨'}</span> {isModifyMode ? 'Refactorizar con IA' : 'Generar Regla'}</>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* ZONA DE ERROR CONTROLADO */}
+                  {aiError && (
+                    <div className="mt-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2.5 rounded-lg text-xs font-bold animate-fade-in flex items-center gap-2 shadow-sm">
+                      <span className="text-base">🛑</span> {aiError}
+                    </div>
+                  )}
+
+                  {/* 🚀 ZONA DE ÉXITO Y REVERSIÓN (UNDO) */}
+                  {aiSuccess && (
+                    <div className="mt-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-4 py-2.5 rounded-lg text-xs font-bold animate-fade-in flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✅</span>
+                        <span>¡Código generado! La IA ha reescrito la regla con éxito. Revisa el código en el editor inferior.</span>
+                      </div>
+                      <button 
+                        onClick={handleRevertAI}
+                        className="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                      >
+                        ↩️ Deshacer Cambios
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* 🔒 BLOQUE MANDATORIO 1 */}
             <div className="border border-slate-700 rounded-xl overflow-hidden opacity-75 shadow-sm">
               <div className="bg-slate-800 text-slate-400 text-[9px] px-3 py-1 font-mono uppercase tracking-widest flex justify-between items-center border-b border-slate-900">
                 <span>⚙️ 1. Parámetros del Motor (Fijo)</span>
                 <span className="font-bold text-amber-500/80">🔒 LOCK</span>
               </div>
-              <CodeMirror value={MANDATORY_HEADER} theme="dark" extensions={[sql({ dialect: PostgreSQL })]} readOnly={true} editable={false} basicSetup={{ lineNumbers: true, foldGutter: false }} />
+              <CodeMirror 
+                value={MANDATORY_HEADER} 
+                theme="dark" 
+                extensions={[sql({ dialect: PostgreSQL })]} 
+                readOnly={true} 
+                editable={false} 
+                basicSetup={{ lineNumbers: true, foldGutter: false }} 
+              />
             </div>
 
             {/* 🧩 SECCIÓN DINÁMICA: TABLAS WITH */}
@@ -553,7 +735,14 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
                 <span>📊 2. Proyección Mandatoria de Activación (Fijo)</span>
                 <span className="font-bold text-amber-500/80">🔒 LOCK</span>
               </div>
-              <CodeMirror value={LOCKED_SELECT_FROM} theme="dark" extensions={[sql({ dialect: PostgreSQL })]} readOnly={true} editable={false} basicSetup={{ lineNumbers: true, foldGutter: false }} />
+              <CodeMirror 
+                value={LOCKED_SELECT_FROM} 
+                theme="dark" 
+                extensions={[sql({ dialect: PostgreSQL })]} 
+                readOnly={true} 
+                editable={false} 
+                basicSetup={{ lineNumbers: true, foldGutter: false }} 
+              />
             </div>
 
             {/* ✍️ BLOQUE 3 */}
@@ -618,7 +807,7 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
                       <ul className="space-y-2">
                         {testResult.details.map((detail, idx) => ( 
                           <li key={idx} className="flex items-start gap-2 text-[10px] text-slate-300">
-                            <span className="text-rose-500 shrink-0 mt-0.5">🔴</span>
+                            <span className="text-rose-50 shrink-0 mt-0.5">🔴</span>
                             <span className="font-mono leading-tight">{detail}</span>
                           </li> 
                         ))}
@@ -717,11 +906,21 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
                       <p className="text-[9px] text-slate-400 italic mb-2 px-1 leading-tight">{table.description}</p>
                       {table.columns?.map(col => (
                         <div key={col.column_name} draggable="true" onDragStart={(e) => handleDragStart(e, col.column_name)} className="flex justify-between items-start gap-2 p-2 hover:bg-slate-900 rounded border border-transparent hover:border-slate-800 group transition-colors cursor-grab active:cursor-grabbing">
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="text-[10px] font-bold text-slate-300 font-mono truncate">{col.column_name}</p>
                             <p className={`text-[8px] font-mono font-bold mt-0.5 ${table.table_name === 'params' ? 'text-power-purple' : 'text-emerald-500'}`}>{col.data_type}</p>
+                            
+                            {/* 🚀 Renderizamos el comentario de la columna */}
+                            {col.description && (
+                              <p className="text-[9px] text-slate-400/80 italic mt-1.5 leading-snug break-words pr-2">
+                                {col.description}
+                              </p>
+                            )}
                           </div>
-                          <button onClick={(e) => handleCopy(e, col.column_name)} className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 bg-slate-800 hover:bg-power-purple text-slate-300 rounded text-[10px]" title="Copiar Columna">{copiedItem === col.column_name ? '✔️' : '📋'}</button>
+                          
+                          <button onClick={(e) => handleCopy(e, col.column_name)} className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1.5 bg-slate-800 hover:bg-power-purple text-slate-300 rounded text-[10px] shrink-0 mt-0.5" title="Copiar Columna">
+                            {copiedItem === col.column_name ? '✔️' : '📋'}
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -786,8 +985,13 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, onApplySql, o
                 </div>
               ))}
               <div className="flex gap-2 pt-3 border-t border-slate-800 mt-2">
-                <button type="button" onClick={() => setTestModalOpen(false)} className="flex-1 py-2 rounded-lg text-[10px] font-bold text-slate-400 hover:bg-slate-800 border border-slate-700">Cancelar</button>
-                <button type="submit" disabled={testing} className="flex-1 py-2 rounded-lg text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex justify-center items-center gap-2">
+                <button type="button" onClick={() => setTestModalOpen(false)} className="flex-1 py-2 rounded-lg text-[10px] font-bold text-slate-400 hover:bg-slate-800 border border-slate-700 transition-colors">Cancelar</button>
+                
+                <button 
+                  type="submit" 
+                  disabled={testing || (!testParams.p1.trim() && !testParams.p2.trim() && !testParams.p3.trim() && !testParams.p4.trim())} 
+                  className="flex-1 py-2 rounded-lg text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition-all"
+                >
                   {testing ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '▶️ Ejecutar SQL'}
                 </button>
               </div>

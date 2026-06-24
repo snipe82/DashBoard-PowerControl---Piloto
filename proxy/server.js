@@ -234,7 +234,6 @@ app.delete('/api/users/:id', async (req, res) => {
 // ==========================================
 // 🛠️ 4. RUTAS DEL MÓDULO DE ANÁLISIS (REGLAS V2 - CICLO DE VIDA)
 // ==========================================
-// Mantenemos la ruta base
 app.get('/api/v1/rules', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, { headers: getHeaders(req) });
@@ -243,7 +242,6 @@ app.get('/api/v1/rules', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVO: Obtener la última versión de trabajo (Punta de lanza)
 app.get('/api/v1/rules/latest', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/latest`, { headers: getHeaders(req) });
@@ -252,7 +250,6 @@ app.get('/api/v1/rules/latest', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVO: Crear un borrador (Draft)
 app.post('/api/v1/rules/:ruleCode/draft', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/draft`, {
@@ -264,7 +261,6 @@ app.post('/api/v1/rules/:ruleCode/draft', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVO: Cambiar etapa en el ciclo de vida (Avanzar embudo)
 app.put('/api/v1/rules/:ruleCode/status', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/status`, {
@@ -276,7 +272,6 @@ app.put('/api/v1/rules/:ruleCode/status', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVO: Restaurar una versión antigua (Rollback)
 app.post('/api/v1/rules/:ruleCode/restore/:versionNumber', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/restore/${req.params.versionNumber}`, {
@@ -287,7 +282,6 @@ app.post('/api/v1/rules/:ruleCode/restore/:versionNumber', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// Mantengo las rutas de testeo y diccionario de siempre
 app.get('/api/v1/rules/dictionary', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/dictionary`, { headers: getHeaders(req) });
@@ -332,7 +326,6 @@ app.get('/api/v1/rules/:ruleCode', async (req, res) => {
 });
 
 // LOS SIGUIENTES ENDPOINTS YA NO EXISTEN EN EL BACKEND V2 PERO LOS DEJO APUNTANDO A LA API ORIGINAL
-// PARA QUE REBOTEN EL 404 DE MANERA CORRECTA COMO DICTA EL CONTRATO.
 app.post('/api/v1/rules', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, {
@@ -366,7 +359,6 @@ app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-
 // ==========================================
 // 🔎 5. NUEVO MÓDULO: BUSCADOR DE EVENTOS TRANSACCIONALES (CAJA NEGRA)
 // ==========================================
@@ -385,7 +377,7 @@ app.get('/api/v1/events/search', async (req, res) => {
 });
 
 // ==========================================
-// 📊 6. PROCESADOR DE ESTADÍSTICAS DEL DASHBOARD (REPOTENCIADO V4)
+// 📊 6. PROCESADOR DE ESTADÍSTICAS DEL DASHBOARD
 // ==========================================
 app.get('/api/stats/summary', async (req, res) => {
     try {
@@ -403,7 +395,6 @@ app.get('/api/stats/summary', async (req, res) => {
             return [];
         };
 
-        // 🚀 SUBIMOS A 5000 EL LÍMITE PARA ALCANZAR LOS DATOS DE MAYO (MES ANTERIOR)
         const limit = 5000;
         const [abiertas, enRevision, fraudes, sospechosos, descartadas, enRevisionAdicional] = await Promise.all([
             fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=${limit}`),
@@ -427,15 +418,12 @@ app.get('/api/stats/summary', async (req, res) => {
         const globalesMesActual = [];
         const globalesMesAnterior = [];
 
-        // 🧠 EXTRACTOR DEFENSIVO DE FECHAS A PRUEBA DE BALAS
         const extractSafeDate = (al) => {
             let raw = al.fecha || al.fecha_creacion || al.created_at || al.dates?.utc;
             if (!raw) return null;
 
-            // Si el backend envía formato "DD/MM/YYYY" (Ej: 15/05/2026), JS lo voltea. Lo forzamos a estándar ISO.
             if (typeof raw === 'string' && raw.match(/^\d{2}\/\d{2}\/\d{4}/)) {
                 const parts = raw.split(/[\s/T:-]+/); 
-                // parts[0]=DD, parts[1]=MM, parts[2]=YYYY
                 raw = `${parts[2]}-${parts[1]}-${parts[0]}T${parts[3]||'00'}:${parts[4]||'00'}:${parts[5]||'00'}`;
             }
 
@@ -500,8 +488,6 @@ app.get('/api/stats/summary', async (req, res) => {
 
             arreglo.forEach(al => {
                 uniqueClientsPanel.add(resolveEntityId(al));
-                
-                // 🚀 AQUÍ ESTABA EL BLOQUEADOR. Ahora, si no hay código de regla, igual la suma como "SIN_CODIGO"
                 const ruleCode = al.rule_code || al.codigoregla || al.ruleCode || al.alert_code || 'SIN_CÓDIGO';
                 const ruleName = al.rule_name || al.regla || al.ruleName || 'Regla Histórica / Desconocida';
                 
@@ -538,7 +524,38 @@ app.get('/api/stats/summary', async (req, res) => {
 });
 
 // ==========================================
-// 🌐 7. MANEJO DE RUTAS ESTÁTICAS / WILDCARD (SIEMPRE AL FINAL)
+// 🤖 8. PROXY PARA EL MOTOR DE INTELIGENCIA ARTIFICIAL
+// ==========================================
+app.post('/api/v1/rules/ai/generate', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/ai/generate`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        if (response.status === 401) return res.status(401).json({ error: 'Token expirado' });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { 
+        res.status(503).json({ error: 'Motor de Inteligencia Artificial no disponible' }); 
+    }
+});
+
+app.post('/api/v1/rules/ai/modify', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/ai/modify`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        if (response.status === 401) return res.status(401).json({ error: 'Token expirado' });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { 
+        res.status(503).json({ error: 'Motor de Inteligencia Artificial no disponible' }); 
+    }
+});
+
+// ==========================================
+// 🌐 9. MANEJO DE RUTAS ESTÁTICAS / WILDCARD (SIEMPRE AL FINAL)
 // ==========================================
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'views', 'index.html')));
 
