@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import ReviewDrawer from './ReviewDrawer'; // 🚀 IMPORTACIÓN CORREGIDA: Traemos el Cajón
+import ReviewDrawer from './ReviewDrawer';
 
 const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId = '', onSelectEvent = null }) => {
   const [searchParams, setSearchParams] = useState({
@@ -23,8 +23,14 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [activeTab, setActiveTab] = useState('ALERTAS');
   
-  // ESTADO PARA INSPECCIÓN DE ALERTAS EN MODO SOLO LECTURA
   const [alertToInspect, setAlertToInspect] = useState(null);
+
+  // 🚀 ESTADOS PARA EL BOTÓN DE PÁNICO (Alerta Manual)
+  const [eventoParaAlerta, setEventoParaAlerta] = useState(null);
+  const [comentarioManual, setComentarioManual] = useState('');
+  const [severidadManual, setSeveridadManual] = useState('HIGH');
+  const [enviandoAlerta, setEnviandoAlerta] = useState(false);
+  const [errorAlerta, setErrorAlerta] = useState('');
 
   const formatToInput = (dateStr) => {
     if (!dateStr) return '';
@@ -172,13 +178,43 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
     setActiveTab('ALERTAS');
   };
 
+  // 🚀 FUNCIÓN PARA GATILLAR ALERTA MANUAL
+  const generarAlertaManual = async (e) => {
+    e.preventDefault();
+    if (!comentarioManual.trim()) {
+      setErrorAlerta("El comentario justificativo es obligatorio.");
+      return;
+    }
+
+    setEnviandoAlerta(true);
+    setErrorAlerta('');
+
+    const payload = {
+      customer_id: eventoParaAlerta.customer_id,
+      application_id: eventoParaAlerta.application_id || '',
+      review_comment: comentarioManual,
+      severity: severidadManual
+    };
+
+    try {
+      const res = await api.post('/api/v1/events/manual-alert', payload);
+      alert(res.data?.message || '¡Alerta generada con éxito! Ya se encuentra en la bandeja de En Revisión.');
+      setEventoParaAlerta(null);
+      setComentarioManual('');
+      setSeveridadManual('HIGH');
+    } catch (err) {
+      setErrorAlerta(err.response?.data?.error || err.response?.data?.message || 'Error al intentar generar la alerta manual.');
+    } finally {
+      setEnviandoAlerta(false);
+    }
+  };
+
   const totalEncontrados = eventos.length;
   const totalConAlertas = eventos.filter(evt => evt.alerts_summary?.has_alerts).length;
 
   return (
     <div className={`flex flex-col h-full animate-fade-in ${isModal ? 'w-full h-full' : 'p-4 md:p-6 max-w-7xl mx-auto'}`}>
       
-      {/* HEADER DEL ENTORNO */}
       <div className="mb-4 flex justify-between items-start shrink-0">
         <div>
           <h2 className="text-xl md:text-2xl font-black text-power-blue flex items-center gap-2">
@@ -211,9 +247,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
         )}
       </div>
 
-      {/* PANEL MULTIFILTRO CON ACORDEÓN */}
       <div className="bg-white border border-gray-200 rounded-xl mb-6 shadow-sm overflow-hidden transition-all shrink-0">
-        
         <div 
           className="px-5 py-3 bg-slate-50 border-b border-gray-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
           onClick={() => setFiltrosExpandidos(!filtrosExpandidos)}
@@ -292,7 +326,6 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
         )}
       </div>
 
-      {/* GRILLA PRINCIPAL */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col min-h-[250px]">
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left border-collapse min-w-[1050px]">
@@ -304,7 +337,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                 <th className="px-5 py-3.5">Contacto Principal</th>
                 <th className="px-5 py-3.5">Tipo Evento</th>
                 <th className="px-5 py-3.5 text-center">Resolución Motor</th>
-                <th className="px-5 py-3.5 text-right">Forense</th>
+                <th className="px-5 py-3.5 text-right">Acción</th>
               </tr>
             </thead>
             <tbody className="text-xs divide-y divide-gray-100">
@@ -316,7 +349,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                 <tr><td colSpan="7" className="text-center py-20 text-gray-400 italic font-medium">Establece un rango horario y presiona buscar.</td></tr>
               ) : (
                 eventos.map((evt) => (
-                  <tr key={evt.event_id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={evt.event_id} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-5 py-3 font-mono">
                       <p className="font-bold text-gray-800">{evt.dates?.lima?.split(',')[0]}</p>
                       <p className="text-[10px] text-power-purple font-bold mt-0.5">{evt.dates?.lima?.split(',')[1]?.trim()}</p>
@@ -335,14 +368,10 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-gray-700">{evt.customer_details?.celular || 'N/A'}</span>
                         {evt.customer_details?.previous_phone && (
-                          <div className="relative flex items-center group cursor-help">
+                          <div className="relative flex items-center cursor-help">
                             <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wide uppercase shadow-2xs">
                               Historial
                             </span>
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max px-3 py-1.5 bg-slate-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl z-30 font-sans">
-                              <span className="text-amber-400 font-black">Contacto Anterior:</span> {evt.customer_details.previous_phone}
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -374,12 +403,23 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                           ⚡ Seleccionar
                         </button>
                       ) : (
-                        <button 
-                          onClick={() => abrirVisorForense(evt)} 
-                          className="text-power-purple font-black text-[11px] bg-power-purple/5 hover:bg-power-purple/10 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap"
-                        >
-                          Ver Trama
-                        </button>
+                        <div className="flex items-center justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                          {/* 🚀 BOTÓN DE PÁNICO (Alerta Manual) */}
+                          <button 
+                            onClick={() => setEventoParaAlerta(evt)} 
+                            className="text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-bold text-[10px] px-2 py-1 rounded-md transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                            title="Generar Alerta de Fraude Manual"
+                          >
+                            🚨 Gatillar Alerta
+                          </button>
+                          
+                          <button 
+                            onClick={() => abrirVisorForense(evt)} 
+                            className="text-power-purple font-black text-[11px] bg-power-purple/5 hover:bg-power-purple/10 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap border border-power-purple/20 active:scale-95"
+                          >
+                            Ver Trama
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -389,6 +429,66 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
           </table>
         </div>
       </div>
+
+      {/* 🚀 MODAL: GENERACIÓN DE ALERTA MANUAL */}
+      {eventoParaAlerta && (
+        <div className="fixed inset-0 bg-slate-900/70 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-red-200 overflow-hidden">
+            <div className="bg-rose-50 border-b border-rose-100 p-4 flex justify-between items-center">
+              <h3 className="text-rose-700 font-black flex items-center gap-2 text-lg">
+                <span>🚨</span> Botón de Pánico 
+              </h3>
+              <button onClick={() => setEventoParaAlerta(null)} className="text-gray-400 hover:bg-white hover:text-rose-600 w-8 h-8 rounded-full flex items-center justify-center transition-colors font-bold shadow-xs border border-transparent hover:border-gray-200">✕</button>
+            </div>
+            
+            <form onSubmit={generarAlertaManual} className="p-5">
+              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                Estás a punto de saltarte el motor de reglas y crear una alerta manual para el cliente <strong className="text-gray-800">{eventoParaAlerta.customer_details?.full_name || 'Desconocido'}</strong>. Esta alerta pasará directamente a la bandeja <strong className="text-rose-600">En Revisión</strong>.
+              </p>
+
+              {errorAlerta && (
+                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2">
+                  <span>🛑</span> {errorAlerta}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1">Nivel de Severidad</label>
+                  <select 
+                    value={severidadManual} 
+                    onChange={(e) => setSeveridadManual(e.target.value)} 
+                    className="w-full p-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-rose-400 bg-gray-50 font-bold text-gray-700"
+                  >
+                    <option value="CRITICAL">🔴 Crítico (Riesgo inminente)</option>
+                    <option value="HIGH">🟠 Alto</option>
+                    <option value="MEDIUM">🟡 Medio</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-rose-600 uppercase tracking-wider mb-1">Justificación Obligatoria</label>
+                  <textarea 
+                    required
+                    rows="3"
+                    value={comentarioManual}
+                    onChange={(e) => setComentarioManual(e.target.value)}
+                    placeholder="Explica por qué estás levantando esta alerta manualmente..."
+                    className="w-full p-3 border border-rose-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-rose-400 bg-rose-50/30 resize-none"
+                  ></textarea>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setEventoParaAlerta(null)} className="px-4 py-2 rounded-xl font-bold text-gray-500 hover:bg-gray-100 text-xs transition-colors">Cancelar</button>
+                <button type="submit" disabled={enviandoAlerta || !comentarioManual.trim()} className="px-6 py-2 rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
+                  {enviandoAlerta ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '🚨 Generar Alerta'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DETALLE DE CAJA NEGRA EN 3 PESTAÑAS */}
       {selectedEvent && (
@@ -495,17 +595,16 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
         </div>
       )}
 
-     {/* 🚀 RENDERIZADO DEL CAJÓN DE REVISIÓN EN MODO SOLO LECTURA FORENSE */}
+     {/* RENDERIZADO DEL CAJÓN DE REVISIÓN EN MODO SOLO LECTURA FORENSE */}
      {alertToInspect && (
         <div className="relative z-[300]">
           <ReviewDrawer 
             isOpen={!!alertToInspect} 
             onClose={() => setAlertToInspect(null)} 
-            // 🚀 CORRECCIÓN: Pasamos el DNI o Customer ID del evento, no el ID de la alerta
             alertId={selectedEvent?.customer_id || selectedEvent?.customer_details?.dni}
             estadoActual={alertToInspect.status || 'OPEN'}
             isReadOnlyContext={true}
-            targetAlertId={alertToInspect.alert_id} // 🚀 Le decimos qué alerta exacta enfocar
+            targetAlertId={alertToInspect.alert_id} 
           />
         </div>
       )}

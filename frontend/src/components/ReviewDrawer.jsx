@@ -9,7 +9,9 @@ const traducirEstado = (estado) => {
     'ADDITIONAL_REVIEW': 'En revisión adicional',
     'SUSPICIOUS': 'Sospechosa',
     'FRAUD': 'Fraude Confirmado',
-    'DISCARDED': 'Descartada (Falso Positivo)'
+    'DISCARDED': 'Descartada (Falso Positivo)',
+    'CLOSED_FALSE_POSITIVE': 'Falso Positivo (Cerrado)',
+    'CLOSED_CONFIRMED_FRAUD': 'Fraude Confirmado (Cerrado)'
   };
   return diccionario[estado?.toUpperCase()] || estado || '—';
 };
@@ -48,13 +50,15 @@ const ReviewDrawer = ({
 
   const [comentario, setComentario] = useState('');
   const [nuevoEstado, setNuevoEstado] = useState('IN_REVIEW');
+  
+  const [fraudType, setFraudType] = useState('');
+  const [errorDictamen, setErrorDictamen] = useState('');
 
   const [tengoCandado, setTengoCandado] = useState(false);
   const [bloqueadoPorOtro, setBloqueadoPorOtro] = useState(false);
   const [mensajeBloqueo, setMensajeBloqueo] = useState('');
   
   const [esInmutable, setEsInmutable] = useState(false);
-
   const [showParallelEvents, setShowParallelEvents] = useState(false);
 
   const tengoCandadoRef = useRef(false);
@@ -62,8 +66,9 @@ const ReviewDrawer = ({
   const seGuardoExitosamenteRef = useRef(false);
   const formDictamenRef = useRef(null);
   const lastEstadoRef = useRef(estadoActual);
-  
   const intentoDeLockRef = useRef(null);
+
+  const isFraudCaseContext = estadoActual === 'FRAUD'; 
 
   useEffect(() => {
     if (isOpen) {
@@ -91,37 +96,61 @@ const ReviewDrawer = ({
       setSelectedAlertId(null);
       setPayloadData(null);
       setHistorial([]);
+      setErrorDictamen('');
 
       const cleanEntityId = String(entityId).trim();
       const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanEntityId);
 
-      let queryParams = isReadOnlyContext ? '' : `?status=${estadoActual}`;
-      let urlEndpoint = `/api/alerts/entity/${cleanEntityId}${queryParams}`;
-      
-      if (!esUUID) {
-        urlEndpoint = `/api/alerts/dni/${cleanEntityId}${queryParams}`;
+      let url1 = `/api/alerts/${esUUID ? 'entity' : 'dni'}/${cleanEntityId}?status=${estadoActual}`;
+      let url2 = null;
+
+      if (isReadOnlyContext) {
+          url1 = `/api/alerts/${esUUID ? 'entity' : 'dni'}/${cleanEntityId}`;
+      } else if (estadoActual === 'FRAUD') {
+          url1 = `/api/alerts/${esUUID ? 'entity' : 'dni'}/${cleanEntityId}?status=FRAUD`;
+          url2 = `/api/alerts/${esUUID ? 'entity' : 'dni'}/${cleanEntityId}?status=CLOSED_CONFIRMED_FRAUD`;
       }
 
-      api.get(urlEndpoint)
-        .then(res => {
-          const resJson = res.data;
-          setRawResponse(resJson);
+      const safeGet = (url) => api.get(url).catch(() => ({ data: [] }));
+      const peticiones = [safeGet(url1)];
+      if (url2) peticiones.push(safeGet(url2));
 
+      Promise.all(peticiones)
+        .then(responses => {
           let rawAlerts = [];
-          if (Array.isArray(resJson)) {
-            rawAlerts = resJson;
-          } else if (resJson && Array.isArray(resJson.data)) {
-            rawAlerts = resJson.data;
-          } else if (resJson && typeof resJson === 'object') {
-            const obj = resJson.data || resJson;
-            if (obj && (obj.alert_id || obj.fecha || obj.monto || obj.dni || obj.cliente)) {
-              rawAlerts = [obj];
-            }
-          }
+          let rawMetadata = null;
 
-          const alertsFiltered = isReadOnlyContext ? rawAlerts : rawAlerts.filter(al => {
+          responses.forEach((res) => {
+            const resJson = res.data;
+            if (!rawMetadata || (Array.isArray(rawMetadata) && rawMetadata.length === 0)) {
+               rawMetadata = resJson;
+            }
+
+            let arr = [];
+            if (Array.isArray(resJson)) arr = resJson;
+            else if (resJson && Array.isArray(resJson.data)) arr = resJson.data;
+            else if (resJson && typeof resJson === 'object') {
+              const obj = resJson.data || resJson;
+              if (obj && (obj.alert_id || obj.fecha || obj.monto || obj.dni || obj.cliente)) {
+                arr = [obj];
+              }
+            }
+            rawAlerts = [...rawAlerts, ...arr];
+          });
+
+          setRawResponse(rawMetadata);
+
+          const uniqueAlertsMap = new Map();
+          rawAlerts.forEach(al => { if (al.alert_id) uniqueAlertsMap.set(al.alert_id, al); });
+          const uniqueAlerts = Array.from(uniqueAlertsMap.values());
+
+          const alertsFiltered = isReadOnlyContext ? uniqueAlerts : uniqueAlerts.filter(al => {
             const s = al.status || al.estado;
-            return !s || String(s).toUpperCase() === String(estadoActual).toUpperCase();
+            if (!s) return true;
+            if (estadoActual === 'FRAUD') {
+              return String(s).toUpperCase() === 'FRAUD' || String(s).toUpperCase() === 'CLOSED_CONFIRMED_FRAUD';
+            }
+            return String(s).toUpperCase() === String(estadoActual).toUpperCase();
           });
 
           const sortedAlerts = [...alertsFiltered].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
@@ -145,9 +174,9 @@ const ReviewDrawer = ({
               }
             });
 
-            const primeraCompra = resJson.fecha_primera_alerta || primero.fecha_primera_alerta || ultimo.fecha;
-            const ultimaCompra = resJson.fecha_ultima_alerta || primero.fecha_ultima_alerta || primero.fecha;
-            const statusEntidad = resJson.status || resJson.estado || primero.estado || primero.status || estadoActual;
+            const primeraCompra = (rawMetadata && rawMetadata.fecha_primera_alerta) || primero.fecha_primera_alerta || ultimo.fecha;
+            const ultimaCompra = (rawMetadata && rawMetadata.fecha_ultima_alerta) || primero.fecha_ultima_alerta || primero.fecha;
+            const statusEntidad = (rawMetadata && (rawMetadata.status || rawMetadata.estado)) || primero.estado || primero.status || estadoActual;
             const idEntidadFinal = primero.codigo_entidad || primero.customer_id || primero.merchant_id || cleanEntityId;
 
             infoObj = {
@@ -187,7 +216,15 @@ const ReviewDrawer = ({
 
           setInfo(infoObj);
           setAlertas(sortedAlerts);
-          setNuevoEstado(estadoActual === 'OPEN' ? 'IN_REVIEW' : estadoActual);
+          
+          const estadoRealCargado = sortedAlerts[0]?.status || sortedAlerts[0]?.estado || estadoActual;
+          setNuevoEstado(
+            estadoRealCargado === 'OPEN' ? 'IN_REVIEW' : 
+            (estadoRealCargado === 'FRAUD' || estadoRealCargado === 'CLOSED_CONFIRMED_FRAUD') ? 'CLOSED_CONFIRMED_FRAUD' :
+            estadoRealCargado
+          );
+          
+          setFraudType(sortedAlerts[0]?.fraud_type || '');
           setCargando(false);
         })
         .catch(err => {
@@ -219,9 +256,7 @@ const ReviewDrawer = ({
       return;
     }
 
-    if (intentoDeLockRef.current === selectedAlertId) {
-      return; 
-    }
+    if (intentoDeLockRef.current === selectedAlertId) return; 
     
     intentoDeLockRef.current = selectedAlertId;
     setBloqueadoPorOtro(false);
@@ -243,13 +278,11 @@ const ReviewDrawer = ({
         })
         .catch(err => {
           if (!isDrawerActive) return; 
-          
           setTengoCandado(false);
           tengoCandadoRef.current = false;
           idCandadoRef.current = null;
           
           if (err.response && err.response.status === 409) {
-            console.warn("[PowerControl] 409 Conflict:", err.response.data);
             setBloqueadoPorOtro(true);
             setEsInmutable(false);
             setMensajeBloqueo(err.response.data?.error || err.response.data?.message || 'Esta alerta ya está siendo revisada por otro analista.');
@@ -265,10 +298,8 @@ const ReviewDrawer = ({
       isDrawerActive = false; 
       intentoDeLockRef.current = null; 
       clearTimeout(lockTimeoutId);
-      
       const idALiberar = idCandadoRef.current;
       const teniaCandado = tengoCandadoRef.current;
-      
       if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current && !isReadOnlyContext) {
         api.post(`/api/alerts/${idALiberar}/unlock`).catch(() => null);
       }
@@ -279,18 +310,14 @@ const ReviewDrawer = ({
     const handleUnload = () => {
       const idALiberar = idCandadoRef.current;
       const teniaCandado = tengoCandadoRef.current;
-      
       if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current && !isReadOnlyContext) {
         const baseUrl = api.defaults.baseURL || window.location.origin;
         const url = `${baseUrl}/api/alerts/${idALiberar}/unlock`;
         navigator.sendBeacon(url); 
       }
     };
-
     window.addEventListener('beforeunload', handleUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleUnload);
-    };
+    return () => window.removeEventListener('beforeunload', handleUnload);
   }, [isReadOnlyContext]);
 
   useEffect(() => {
@@ -352,46 +379,88 @@ const ReviewDrawer = ({
 
   const guardarRevisionMasiva = async () => {
     if (isReadOnlyContext) return; 
-    if (!comentario) return alert("Por favor, ingresa un comentario justificativo.");
+    setErrorDictamen('');
+
+    if (!comentario.trim()) {
+      return setErrorDictamen("El comentario de resolución es obligatorio para cerrar/actualizar un caso.");
+    }
+
+    if (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType) {
+      return setErrorDictamen("Para casos de fraude confirmado, debe especificar el tipo de fraude (fraud_type).");
+    }
+
     if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
     if (cargandoPayload) return alert("Por favor, espera a que cargue la información del evento seleccionado.");
-    if (!payloadData) return alert("El payload aún no ha cargado o está vacío.");
+    
+    let idParaRuta = payloadData?.customerid || payloadData?.customerId || payloadData?.customer_id;
+    if (!idParaRuta) idParaRuta = payloadData?.document_number || payloadData?.dni || alertaActiva.dni || alertaActiva.document_number || alertaActiva.customer_id || alertaActiva.codigo_entidad;
+    if (!idParaRuta && info?.id_value) idParaRuta = info.id_value;
+    if (!idParaRuta) idParaRuta = entityId;
 
-    let idParaRuta = payloadData.customerid || payloadData.customerId || payloadData.customer_id;
-    if (!idParaRuta) idParaRuta = payloadData.document_number || payloadData.dni || alertaActiva.dni || alertaActiva.document_number;
-    if (!idParaRuta) return alert("Error crítico: No se encontró el campo 'customerid' ni 'dni' en el Payload JSON de esta alerta.");
+    if (!idParaRuta) return alert("Error crítico: No se encontró un identificador válido para este cliente/entidad.");
 
     const cleanIdParaRuta = String(idParaRuta).trim();
     const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanIdParaRuta);
-    const reviewUrl = esUUID ? `/api/alerts/entity/${cleanIdParaRuta}/review` : `/api/alerts/dni/${cleanIdParaRuta}/review`;
-
+    
     const userSession = JSON.parse(localStorage.getItem('user') || '{}');
     const analistaResponsable = userSession.email || userSession.username || "analista@powerpay.pe";
 
-    const body = {
-      status: nuevoEstado,
-      reviewer_id: analistaResponsable,
-      review_comment: comentario,
-      entity_parent_id: String(entityId).trim(),
-      target_dni: alertaActiva.dni || alertaActiva.document_number || null,
-      target_cliente: alertaActiva.cliente || alertaActiva.full_name || null
-    };
-
     try {
-      const res = await api.patch(reviewUrl, body);
-      if (res.status === 200 || res.status === 201) {
-        seGuardoExitosamenteRef.current = true;
-        if (haySiguiente && onSiguiente) onSiguiente();
-        else onClose();
-        setTimeout(() => { recargarTabla(); }, 800);
+      if (isFraudCaseContext) {
+        const casePayload = {
+          case_status: nuevoEstado,
+          fraud_type: nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' ? fraudType : null,
+          resolution_comment: comentario,
+          reviewer_id: analistaResponsable
+        };
+
+        const targetCaseId = alertaActiva.case_id || alertaActiva.id_caso || alertaActiva.alert_id;
+        const resolveUrl = `/api/v1/cases/${targetCaseId}/resolve`;
+        const res = await api.put(resolveUrl, casePayload);
+        
+        if (res.status === 200 || res.status === 201) {
+          seGuardoExitosamenteRef.current = true;
+          if (haySiguiente && onSiguiente) onSiguiente();
+          else onClose();
+          setTimeout(() => { recargarTabla(); }, 800);
+        }
+      } else {
+        const reviewUrl = esUUID ? `/api/alerts/entity/${cleanIdParaRuta}/review` : `/api/alerts/dni/${cleanIdParaRuta}/review`;
+        const body = {
+          status: nuevoEstado,
+          reviewer_id: analistaResponsable,
+          review_comment: comentario,
+          entity_parent_id: String(entityId).trim(),
+          target_dni: alertaActiva.dni || alertaActiva.document_number || null,
+          target_cliente: alertaActiva.cliente || alertaActiva.full_name || null
+        };
+        const res = await api.patch(reviewUrl, body);
+        if (res.status === 200 || res.status === 201) {
+          seGuardoExitosamenteRef.current = true;
+          if (haySiguiente && onSiguiente) onSiguiente();
+          else onClose();
+          setTimeout(() => { recargarTabla(); }, 800);
+        }
       }
     } catch (e) {
-      alert(e.response?.data?.message || "Error de red al intentar guardar la revisión.");
+      console.error("🚨 DEBUG ERROR BACKEND:", e.response?.data);
+      const status = e.response?.status;
+      
+      let msg = e.response?.data?.message || e.response?.data?.error || "Error de red al intentar guardar la revisión.";
+      
+      if (e.response?.data && typeof e.response.data === 'object') {
+          msg = `HTTP ${status}: ` + JSON.stringify(e.response.data, null, 2);
+      }
+
+      if (status === 400 || status === 404) {
+        setErrorDictamen(msg);
+      } else {
+        alert(msg);
+      }
     }
   };
 
   const esSoloLectura = estadoActual === 'DISCARDED' || bloqueadoPorOtro || isReadOnlyContext;
-  
   const scrollToDictamen = () => { formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const agregarRespuestaRapida = (frase) => { setComentario(prev => prev ? `${prev} - ${frase}` : frase); };
 
@@ -400,16 +469,12 @@ const ReviewDrawer = ({
 
   return (
     <>
-      {/* CAPA DE FONDO (BACKDROP) */}
       <div 
         className={`fixed inset-0 z-40 bg-black transition-opacity ${isOpen ? 'visible' : 'invisible'} ${showParallelEvents ? 'opacity-15' : 'opacity-50'}`} 
         onClick={onClose}
       />
 
-      {/* CONTENEDOR ENVOLVENTE INTEGRAL EN PARALELO */}
       <div className={`fixed inset-0 z-50 flex justify-end overflow-hidden pointer-events-none ${isOpen ? 'visible' : 'invisible'}`}>
-
-        {/* EL PANEL COMPAÑERO IZQUIERDO */}
         {showParallelEvents && (
           <div className="absolute left-0 top-0 h-full bg-gray-50 border-r border-gray-200 shadow-2xl p-4 md:p-6 overflow-y-auto pointer-events-auto z-50 animate-slide-in-left w-full md:w-1/3 lg:w-3/5">
             <EventsSearch 
@@ -421,31 +486,23 @@ const ReviewDrawer = ({
           </div>
         )}
 
-        {/* EL CAJÓN DE REVISIÓN ORIGINAL */}
         <div className={`relative h-full w-full md:w-2/3 lg:w-2/5 bg-white shadow-2xl transform transition-transform duration-300 flex flex-col pointer-events-auto z-50 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          
-          {/* 🚀 CABECERA REFACTORIZADA (Permite wrapping flexible sin cortar texto) */}
           <div className="flex flex-wrap justify-between items-center border-b p-3 md:p-5 bg-white shrink-0 z-20 shadow-sm gap-3">
             <h3 className="text-xl font-bold text-power-blue whitespace-nowrap shrink-0">Revisión de Entidad</h3>
             <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 shrink-0 flex-1">
               <div className="flex bg-gray-50 rounded-lg p-0.5 border border-gray-200 shadow-sm shrink-0">
-                <button onClick={onAnterior} disabled={!hayAnterior} className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95" title="Caso Anterior">
+                <button onClick={onAnterior} disabled={!hayAnterior} className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95">
                   <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
                 </button>
                 <div className="w-[1px] bg-gray-200 my-1 mx-0.5"></div>
-                <button onClick={onSiguiente} disabled={!haySiguiente} className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95" title="Caso Siguiente">
+                <button onClick={onSiguiente} disabled={!haySiguiente} className="px-2.5 py-1.5 text-gray-500 hover:text-power-purple hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all active:scale-95">
                   <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
                 </button>
               </div>
 
               <button 
                 onClick={() => setShowParallelEvents(!showParallelEvents)}
-                className={`shrink-0 text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm border transition-all active:scale-95 ${
-                  showParallelEvents 
-                    ? 'bg-amber-500 text-white border-amber-600' 
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-                title="Cruzar tramas JSON de este cliente a la izquierda en tiempo real"
+                className={`shrink-0 text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1 shadow-sm border transition-all active:scale-95 ${showParallelEvents ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
               >
                 <span className={showParallelEvents ? 'text-white' : 'text-amber-500'}>⚡</span> 
                 {showParallelEvents ? 'Ocultar Eventos' : 'Eventos Cliente'}
@@ -467,13 +524,8 @@ const ReviewDrawer = ({
             </div>
           ) : (
             <div className="space-y-6">
-
               {bloqueadoPorOtro && (
-                <div className={`border p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-3 shadow-sm animate-fade-in ${
-                  esInmutable 
-                    ? 'bg-slate-50 border-slate-200 text-slate-800' 
-                    : 'bg-amber-50 border-amber-200 text-amber-800'
-                }`}>
+                <div className={`border p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-3 shadow-sm animate-fade-in ${esInmutable ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
                   <span className="text-2xl shrink-0 leading-none">{esInmutable ? '👁️' : '🔒'}</span>
                   <div className="flex-1 min-w-0">
                     <p className={`font-black uppercase tracking-widest text-[10px] mb-1 ${esInmutable ? 'text-slate-500' : 'text-amber-600'}`}>
@@ -494,13 +546,7 @@ const ReviewDrawer = ({
                         <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
                         <p className="text-lg font-black text-gray-800 leading-tight">{info.display_name}</p>
                       </div>
-                      <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded shadow-xs ml-2 shrink-0 ${
-                          info.status === 'FRAUD' ? 'bg-red-50 text-red-600 border border-red-200' :
-                          info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
-                          info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                          info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border border-purple-200' :
-                          'bg-blue-50 text-blue-600 border border-blue-200'
-                        }`}>
+                      <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded shadow-xs ml-2 shrink-0 ${info.status === 'FRAUD' || info.status === 'CLOSED_CONFIRMED_FRAUD' ? 'bg-red-50 text-red-600 border border-red-200' : info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border border-gray-200' : info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' : info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border border-purple-200' : 'bg-blue-50 text-blue-600 border border-blue-200'}`}>
                         {traducirEstado(info.status)}
                       </span>
                     </div>
@@ -510,7 +556,7 @@ const ReviewDrawer = ({
                         <p className="font-bold text-slate-700 font-mono text-xs bg-slate-50 px-2 py-1 rounded-md border border-slate-200 truncate max-w-[120px] md:max-w-[140px]" title={info.id_value}>
                           {info.id_value}
                         </p>
-                        <button onClick={() => navigator.clipboard.writeText(info.id_value)} className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center shrink-0" title="Copiar identificador completo">📋</button>
+                        <button onClick={() => navigator.clipboard.writeText(info.id_value)} className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center shrink-0">📋</button>
                       </div>
                     </div>
                     <div>
@@ -600,7 +646,7 @@ const ReviewDrawer = ({
                                     </div>
                                     <span className="text-[9px] md:text-[10px] text-gray-400 font-medium font-mono shrink-0">{new Date(item.fecha_comentario).toLocaleString()}</span>
                                   </div>
-                                  <div className="mb-2"><span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border shadow-xs inline-flex items-center gap-1 ${item.status === 'FRAUD' ? 'bg-red-50 text-red-600 border-red-200' : item.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border-gray-200' : item.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' : item.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border-purple-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}><svg className="w-2.5 h-2.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"></path></svg>{traducirEstado(item.status)}</span></div>
+                                  <div className="mb-2"><span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border shadow-xs inline-flex items-center gap-1 ${item.status === 'FRAUD' || item.status === 'CLOSED_CONFIRMED_FRAUD' ? 'bg-red-50 text-red-600 border-red-200' : item.status === 'DISCARDED' || item.status === 'CLOSED_FALSE_POSITIVE' ? 'bg-gray-50 text-gray-600 border-gray-200' : item.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' : item.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border-purple-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}><svg className="w-2.5 h-2.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"></path></svg>{traducirEstado(item.status)}</span></div>
                                   <div className="text-[11px] md:text-xs text-gray-600 leading-relaxed bg-slate-50/50 p-2.5 rounded border border-slate-100 whitespace-pre-wrap">{item.review_comment || <span className="italic text-gray-400">Sin comentario en este cambio de estado.</span>}</div>
                                 </div>
                               </div>
@@ -617,27 +663,87 @@ const ReviewDrawer = ({
                   </div>
 
                   <div ref={formDictamenRef} className="bg-white p-4 rounded-xl border border-gray-200 scroll-mt-6 shadow-sm">
-                    <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Global en Lote</h4>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
-                        <select value={esSoloLectura ? 'DISCARDED' : nuevoEstado} onChange={(e) => setNuevoEstado(e.target.value)} disabled={esSoloLectura} className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none disabled:bg-gray-50 disabled:text-gray-400 cursor-not-allowed">
-                          {estadoActual === 'OPEN' && <option value="IN_REVIEW">Pasar a En Revisión</option>}
-                          {estadoActual === 'IN_REVIEW' && (
-                            <>
-                              <option value="IN_REVIEW">Mantener En Revisión</option>
-                              <option value="ADDITIONAL_REVIEW">En revisión adicional</option>
-                            </>
-                          )}
-                          {estadoActual === 'ADDITIONAL_REVIEW' && <option value="ADDITIONAL_REVIEW">Mantener En revisión adicional</option>}
-                          <option value="DISCARDED">Descartar Todas (Falso Positivo)</option>
-                          <option value="SUSPICIOUS">Sospechoso (Monitorear)</option>
-                          <option value="FRAUD">Fraude Confirmado (Bloquear)</option>
-                        </select>
+                    <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Final del Caso</h4>
+                    
+                    {errorDictamen && (
+                      <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm overflow-x-auto">
+                        <span className="text-sm mt-0.5">🛑</span> 
+                        <pre className="font-mono whitespace-pre-wrap">{errorDictamen}</pre>
                       </div>
+                    )}
+
+                    <div className="space-y-4">
+                      {isFraudCaseContext ? (
+                        <>
+                          <div className="bg-red-50/50 border border-red-100 p-3 rounded-xl shadow-sm mb-2">
+                            <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5 text-red-800">Resolución del Caso (Obligatorio):</label>
+                            <select 
+                              value={esSoloLectura ? 'CLOSED_FALSE_POSITIVE' : nuevoEstado} 
+                              onChange={(e) => {
+                                setNuevoEstado(e.target.value);
+                                setFraudType(''); 
+                                setErrorDictamen('');
+                              }} 
+                              disabled={esSoloLectura} 
+                              className="w-full p-2 border border-red-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-red-400 outline-none disabled:bg-gray-50 disabled:text-gray-400 font-bold text-red-900"
+                            >
+                              <option value="CLOSED_CONFIRMED_FRAUD">🚨 Cerrar como Fraude Confirmado</option>
+                              <option value="CLOSED_FALSE_POSITIVE">✅ Cerrar como Falso Positivo</option>
+                            </select>
+                          </div>
+
+                          {nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && (
+                            <div className="animate-fade-in pl-3 border-l-2 border-red-300">
+                              <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5 text-slate-600">Tipificación del Fraude (Obligatorio):</label>
+                              <select 
+                                value={fraudType} 
+                                onChange={(e) => {
+                                  setFraudType(e.target.value);
+                                  setErrorDictamen('');
+                                }} 
+                                disabled={esSoloLectura} 
+                                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-red-400 outline-none disabled:bg-gray-50 disabled:text-gray-400 font-medium"
+                              >
+                                <option value="" disabled>-- Selecciona un tipo de fraude --</option>
+                                <option value="FRAUD_FRUSTRATED">Fraude Frustrado (Sin pérdida real)</option>
+                                <option value="FRAUD_MERCHANT_ASSUMED">Asumido por Comercio</option>
+                                <option value="FRAUD_LOSS">Pérdida Asumida (Impacto directo)</option>
+                              </select>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div>
+                          <label className="block text-xs font-bold mb-1">Impactar a todas las alertas como:</label>
+                          <select 
+                            value={esSoloLectura ? 'DISCARDED' : nuevoEstado} 
+                            onChange={(e) => {
+                              setNuevoEstado(e.target.value);
+                              setErrorDictamen('');
+                            }} 
+                            disabled={esSoloLectura} 
+                            className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none disabled:bg-gray-50 disabled:text-gray-400 cursor-not-allowed"
+                          >
+                            {estadoActual === 'OPEN' && <option value="IN_REVIEW">Pasar a En Revisión</option>}
+                            {estadoActual === 'IN_REVIEW' && (
+                              <>
+                                <option value="IN_REVIEW">Mantener En Revisión</option>
+                                <option value="ADDITIONAL_REVIEW">En revisión adicional</option>
+                              </>
+                            )}
+                            {estadoActual === 'ADDITIONAL_REVIEW' && <option value="ADDITIONAL_REVIEW">Mantener En revisión adicional</option>}
+                            
+                            <option value="DISCARDED">Descartar Todas (Falso Positivo)</option>
+                            <option value="SUSPICIOUS">
+                              {estadoActual === 'SUSPICIOUS' ? 'Mantener como Sospechoso (Monitorear)' : 'Sospechoso (Monitorear)'}
+                            </option>
+                            <option value="FRAUD">Fraude Confirmado (Escalar a Caso)</option>
+                          </select>
+                        </div>
+                      )}
                       
                       <div>
-                        <label className="block text-xs font-bold mb-1.5">Nuevo Comentario de Revisión</label>
+                        <label className="block text-xs font-bold mb-1.5">Justificación de la Resolución</label>
                         {!esSoloLectura && (
                           <div className="flex flex-wrap gap-1.5 mb-2">
                             {RESPUESTAS_RAPIDAS.map((frase, i) => (
@@ -645,12 +751,26 @@ const ReviewDrawer = ({
                             ))}
                           </div>
                         )}
-                        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} disabled={esSoloLectura} rows="3" className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none disabled:bg-gray-50 disabled:text-gray-400 cursor-not-allowed" placeholder={esSoloLectura ? (isReadOnlyContext ? "Este expediente ha sido abierto desde el Buscador Forense en modo estrictamente de Solo Lectura." : "Historial bloqueado o sin privilegios de edición...") : "Explica el motivo de tu decisión o usa un botón de arriba..."}></textarea>
+                        <textarea 
+                          value={comentario} 
+                          onChange={(e) => {
+                            setComentario(e.target.value);
+                            setErrorDictamen('');
+                          }} 
+                          disabled={esSoloLectura} 
+                          rows="3" 
+                          className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-power-purple outline-none resize-none disabled:bg-gray-50 disabled:text-gray-400 cursor-not-allowed" 
+                          placeholder={esSoloLectura ? (isReadOnlyContext ? "Este expediente ha sido abierto en modo estrictamente de Solo Lectura." : "Historial bloqueado o sin privilegios...") : "Explica detalladamente el motivo de tu decisión o resolución..."}
+                        ></textarea>
                       </div>
 
                       {!esSoloLectura && (
-                        <button onClick={guardarRevisionMasiva} className="w-full bg-power-purple text-white font-bold py-3 rounded-lg shadow-md hover:bg-power-purple/80 transition-all active:scale-95 text-sm md:text-base">
-                          Guardar y Resolver {cantidadAlertasCliente} Alertas de Cliente
+                        <button 
+                          onClick={guardarRevisionMasiva} 
+                          disabled={!comentario.trim() || (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType)}
+                          className={`w-full text-white font-bold py-3 rounded-lg shadow-md transition-all active:scale-95 text-sm md:text-base ${(!comentario.trim() || (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType)) ? 'bg-slate-300 cursor-not-allowed opacity-80' : isFraudCaseContext ? 'bg-red-600 hover:bg-red-700' : 'bg-power-purple hover:bg-power-purple/90'}`}
+                        >
+                          {isFraudCaseContext ? 'Cerrar Caso Definitivamente' : `Guardar y Resolver ${cantidadAlertasCliente} Alerta(s)`}
                         </button>
                       )}
                     </div>
@@ -662,7 +782,6 @@ const ReviewDrawer = ({
                   <p className="text-slate-500 font-bold text-center">No se encontraron alertas activas en estado <span className="text-power-purple">{traducirEstado(estadoActual)}</span>.</p>
                 </div>
               )}
-
             </div>
           )}
           </div>

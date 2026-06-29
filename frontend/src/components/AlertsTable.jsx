@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import api from '../api'; 
 
-const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
+const MiniAlertTooltip = ({ entityId, idx, vistaActual, subTabFraud }) => {
   const [alertas, setAlertas] = useState([]);
   const [cargando, setCargando] = useState(true);
 
@@ -12,15 +12,35 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
     setCargando(true);
     const cleanId = String(entityId).trim();
     const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanId);
-    let urlEndpoint = `/api/alerts/entity/${cleanId}?status=${vistaActual}`;
-    if (!esUUID) urlEndpoint = `/api/alerts/dni/${cleanId}?status=${vistaActual}`;
+    
+    let targetStatus = vistaActual;
+    let extraParam = '';
+    
+    // 🚀 RUTEO DINÁMICO PARA SUBBANDEJAS DE FRAUDE
+    if (vistaActual === 'FRAUD') {
+      if (subTabFraud === 'PENDING') {
+        targetStatus = 'FRAUD';
+      } else if (subTabFraud === 'FRUSTRATED') {
+        targetStatus = 'CLOSED_CONFIRMED_FRAUD';
+        extraParam = '&fraud_type=FRAUD_FRUSTRATED';
+      } else if (subTabFraud === 'MATERIALIZED') {
+        targetStatus = 'CLOSED_CONFIRMED_FRAUD';
+        extraParam = '&fraud_type=FRAUD_MERCHANT_ASSUMED,FRAUD_LOSS';
+      }
+    }
+
+    let urlEndpoint = `/api/alerts/entity/${cleanId}?status=${targetStatus}${extraParam}`;
+    if (!esUUID) urlEndpoint = `/api/alerts/dni/${cleanId}?status=${targetStatus}${extraParam}`;
 
     api.get(urlEndpoint, { signal: controller.signal })
       .then(res => {
         const data = res.data;
         const arr = data.data || (Array.isArray(data) ? data : []);
-        const alertsFiltered = arr.filter(al => !al.status || !al.estado || String(al.status || al.estado).toUpperCase() === String(vistaActual).toUpperCase());
+        
+        // Confiamos en el Backend, solo validamos status base y ordenamos
+        const alertsFiltered = arr.filter(al => !al.status || !al.estado || String(al.status || al.estado).toUpperCase() === String(targetStatus).toUpperCase());
         alertsFiltered.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        
         setAlertas(alertsFiltered.slice(0, 5));
         setCargando(false);
       })
@@ -30,7 +50,7 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual }) => {
       });
 
     return () => controller.abort();
-  }, [entityId, vistaActual]);
+  }, [entityId, vistaActual, subTabFraud]);
 
   const isTooHigh = idx < 6;
 
@@ -63,13 +83,22 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   const [paginacionInfo, setPaginacionInfo] = useState(null);
   const [hoveredEntityId, setHoveredEntityId] = useState(null);
   const [inputPagina, setInputPagina] = useState("1");
+  
+  // 🚀 ESTADO PARA LAS SUBBANDEJAS DE FRAUDE
+  const [subTabFraud, setSubTabFraud] = useState('PENDING'); 
+  
   const pageSize = 20;
 
-  // 🚀 EXTRAER IDENTIDAD DEL USUARIO ACTIVO
   const userSession = JSON.parse(localStorage.getItem('user') || '{}');
   const miUsuarioActual = userSession.email || userSession.username || "analista@powerpay.pe";
 
-  useEffect(() => { setPaginaActual(1); }, [vistaActual, filtros]);
+  // Reseteos
+  useEffect(() => { 
+    setPaginaActual(1); 
+    if (vistaActual !== 'FRAUD') setSubTabFraud('PENDING'); 
+  }, [vistaActual, filtros]);
+
+  useEffect(() => { setPaginaActual(1); }, [subTabFraud]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,10 +111,28 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
       const hayBusqueda = textoBusqueda !== '';
       const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i.test(textoBusqueda);
 
-      let url = `/api/alerts/grouped?status=${vistaActual}&page=${paginaActual}&pageSize=${pageSize}`;
-      if (hayBusqueda) {
-        url = esUUID ? `/api/alerts/entity/${textoBusqueda}?status=${vistaActual}` : `/api/alerts/dni/${textoBusqueda}?status=${vistaActual}`;
+      // 🚀 RUTEO DINÁMICO
+      let targetStatus = vistaActual;
+      let fraudTypeParam = '';
+
+      if (vistaActual === 'FRAUD') {
+        if (subTabFraud === 'PENDING') {
+          targetStatus = 'FRAUD'; 
+        } else if (subTabFraud === 'FRUSTRATED') {
+          targetStatus = 'CLOSED_CONFIRMED_FRAUD';
+          fraudTypeParam = '&fraud_type=FRAUD_FRUSTRATED';
+        } else if (subTabFraud === 'MATERIALIZED') {
+          targetStatus = 'CLOSED_CONFIRMED_FRAUD';
+          fraudTypeParam = '&fraud_type=FRAUD_MERCHANT_ASSUMED,FRAUD_LOSS';
+        }
       }
+
+      let url = `/api/alerts/grouped?status=${targetStatus}&page=${paginaActual}&pageSize=${pageSize}${fraudTypeParam}`;
+      
+      if (hayBusqueda) {
+        url = esUUID ? `/api/alerts/entity/${textoBusqueda}?status=${targetStatus}${fraudTypeParam}` : `/api/alerts/dni/${textoBusqueda}?status=${targetStatus}${fraudTypeParam}`;
+      }
+      
       if (filtros?.fechaInicio) url += `&dateFrom=${filtros.fechaInicio}`;
       if (filtros?.fechaFin) url += `&dateTo=${filtros.fechaFin}`;
 
@@ -94,7 +141,8 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           const data = res.data;
           let arrData = Array.isArray(data) ? data : (data?.data || (data && typeof data === 'object' && data.alert_id ? [data] : []));
 
-          arrData = arrData.filter(item => !item.status || !item.estado || String(item.status || item.estado).toUpperCase() === String(vistaActual).toUpperCase());
+          // 🛡️ Filtro Base: Validamos que el status coincida con la bandeja principal
+          arrData = arrData.filter(item => !item.status || !item.estado || String(item.status || item.estado).toUpperCase() === String(targetStatus).toUpperCase());
 
           const resolveEntityId = (item) => {
               if (!item) return Math.random().toString();
@@ -116,11 +164,15 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                 total_alertas: 1, 
                 monto_total_riesgo: parseFloat(item.monto || 0),
                 locked_by: item.locked_by || null,
-                locked_at: item.locked_at || null
+                locked_at: item.locked_at || null,
+                fraud_type: item.fraud_type || null
               };
             } else {
               agrupado[id].total_alertas += 1;
               agrupado[id].monto_total_riesgo += parseFloat(item.monto || 0);
+              
+              if (item.fraud_type) agrupado[id].fraud_type = item.fraud_type; 
+
               if (item.locked_by) {
                 agrupado[id].locked_by = item.locked_by;
                 agrupado[id].locked_at = item.locked_at;
@@ -157,7 +209,7 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
     cargarDatos();
     const intervalo = setInterval(cargarDatos, 30000);
     return () => { clearInterval(intervalo); controller.abort(); };
-  }, [vistaActual, filtros, paginaActual, refreshTrigger]);
+  }, [vistaActual, filtros, paginaActual, refreshTrigger, subTabFraud]);
 
   const procesarSaltoPagina = () => {
     const num = parseInt(inputPagina, 10);
@@ -171,8 +223,32 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   return (
     <div className="p-3 md:p-8 animate-fade-in h-full flex flex-col">
       <div className="bg-white md:rounded-2xl shadow-sm md:border border-gray-100 overflow-visible flex-1 flex flex-col">
-        <div className="overflow-visible flex-1 bg-gray-50 md:bg-white">
-          
+        
+        {/* 🚀 SUB-NAVEGACIÓN (SOLO PARA LA VISTA DE FRAUDE) */}
+        {vistaActual === 'FRAUD' && (
+          <div className="bg-white border-b border-gray-100 p-2 md:p-4 rounded-t-2xl shrink-0 flex gap-2 overflow-x-auto custom-scrollbar">
+            <button 
+              onClick={() => setSubTabFraud('PENDING')}
+              className={`px-4 py-2 text-xs md:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${subTabFraud === 'PENDING' ? 'bg-red-50 text-red-600 border border-red-200 shadow-sm' : 'bg-white text-gray-500 hover:bg-gray-50 border border-transparent'}`}
+            >
+              ⏳ Fraude por Confirmar
+            </button>
+            <button 
+              onClick={() => setSubTabFraud('FRUSTRATED')}
+              className={`px-4 py-2 text-xs md:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${subTabFraud === 'FRUSTRATED' ? 'bg-orange-50 text-orange-600 border border-orange-200 shadow-sm' : 'bg-white text-gray-500 hover:bg-gray-50 border border-transparent'}`}
+            >
+              🛡️ Fraudes Frustrados
+            </button>
+            <button 
+              onClick={() => setSubTabFraud('MATERIALIZED')}
+              className={`px-4 py-2 text-xs md:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${subTabFraud === 'MATERIALIZED' ? 'bg-rose-100 text-rose-700 border border-rose-300 shadow-sm' : 'bg-white text-gray-500 hover:bg-gray-50 border border-transparent'}`}
+            >
+              💸 Fraudes (Pérdidas/Asumidos)
+            </button>
+          </div>
+        )}
+
+        <div className="overflow-visible flex-1 bg-gray-50 md:bg-white relative">
           <table className="hidden md:table w-full text-left border-collapse relative min-w-[800px]">
             <thead className="bg-gray-50/90 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-400 sticky top-0 backdrop-blur-sm z-10">
               <tr>
@@ -185,11 +261,10 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
             </thead>
             <tbody className="text-sm divide-y divide-gray-50">
               {cargando ? <tr><td colSpan="5" className="text-center py-12 text-gray-400 font-bold italic">Consultando entidades...</td></tr> : 
-               entidades.length === 0 ? <tr><td colSpan="5" className="text-center py-12 text-gray-500 italic">No se encontraron entidades en riesgo.</td></tr> : 
+               entidades.length === 0 ? <tr><td colSpan="5" className="text-center py-12 text-gray-500 italic">No se encontraron casos en esta bandeja.</td></tr> : 
                entidades.map((entidad, idx) => {
                   const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
                   
-                  // 🚀 REGLA DE BOTÓN INTELIGENTE NORMALIZADA (Ignora mayúsculas y espacios)
                   const lockedByClean = String(entidad.locked_by || '').trim().toLowerCase();
                   const miUsuarioClean = String(miUsuarioActual || '').trim().toLowerCase();
                   const isLockedBySomeoneElse = entidad.locked_by !== null && lockedByClean !== miUsuarioClean;
@@ -201,6 +276,21 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       <td className="px-6 py-4 font-bold text-gray-800">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span>{entidad.cliente || entidad.full_name || 'No registrado'}</span>
+                          
+                          {/* 🚀 BADGE VISUAL DE TIPIFICACIÓN DE FRAUDE */}
+                          {entidad.fraud_type && (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shadow-xs uppercase tracking-tight ${
+                              entidad.fraud_type === 'FRAUD_FRUSTRATED' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                              entidad.fraud_type === 'FRAUD_MERCHANT_ASSUMED' ? 'bg-rose-100 text-rose-700 border border-rose-300' :
+                              entidad.fraud_type === 'FRAUD_LOSS' ? 'bg-red-100 text-red-700 border border-red-300' :
+                              'bg-gray-100 text-gray-700 border border-gray-200'
+                            }`}>
+                              {entidad.fraud_type === 'FRAUD_FRUSTRATED' ? '🛡️ Frustrado' :
+                               entidad.fraud_type === 'FRAUD_MERCHANT_ASSUMED' ? '🏪 Asumido Comercio' :
+                               entidad.fraud_type === 'FRAUD_LOSS' ? '💸 Pérdida' : entidad.fraud_type}
+                            </span>
+                          )}
+
                           {isLockedBySomeoneElse && (
                             <span className="inline-flex items-center gap-1 text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-black shadow-xs tracking-tight animate-pulse" title={`Bloqueado por ${entidad.locked_by} el ${entidad.locked_at ? new Date(entidad.locked_at).toLocaleString() : '—'}`}>
                               🔒 {entidad.locked_by.split('@')[0]}
@@ -213,12 +303,11 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       <td className={`px-6 py-4 text-center relative ${hoveredEntityId === idEntidadFinal ? 'z-50' : 'z-0'}`}>
                         <div onMouseEnter={() => setHoveredEntityId(idEntidadFinal)} onMouseLeave={() => setHoveredEntityId(null)} className="inline-block relative">
                           <span className="bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold border border-red-200 shadow-sm cursor-pointer block">{entidad.total_alertas || 1} alertas</span>
-                          {hoveredEntityId === idEntidadFinal && <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} />}
+                          {hoveredEntityId === idEntidadFinal && <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} subTabFraud={subTabFraud} />}
                         </div>
                       </td>
                       <td className="px-6 py-4 font-black text-power-purple text-right text-base">S/ {parseFloat(entidad.monto_total_riesgo || entidad.monto || 0).toFixed(2)}</td>
                       <td className="px-6 py-4 text-right">
-                        {/* 🔓 EL BOTÓN NUNCA SE DESHABILITA POR CONCURRENCIA */}
                         <button className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity bg-power-purple/10 px-4 py-2 rounded-lg disabled:opacity-50"
                           disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                           onClick={(e) => {
@@ -235,11 +324,10 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           {/* VISTA MÓVIL DISPOSITIVOS RESPONSIVOS */}
           <div className="block md:hidden space-y-3 pb-4">
             {cargando ? <p className="text-center py-12 text-gray-400 font-bold italic">Consultando entidades...</p> : 
-             entidades.length === 0 ? <p className="text-center py-12 text-gray-500 italic">No se encontraron entidades.</p> : 
+             entidades.length === 0 ? <p className="text-center py-12 text-gray-500 italic">No se encontraron casos en esta bandeja.</p> : 
              entidades.map((entidad, idx) => {
                 const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
                 
-                // 🚀 REGLA DE BOTÓN INTELIGENTE NORMALIZADA (Ignora mayúsculas y espacios)
                 const lockedByClean = String(entidad.locked_by || '').trim().toLowerCase();
                 const miUsuarioClean = String(miUsuarioActual || '').trim().toLowerCase();
                 const isLockedBySomeoneElse = entidad.locked_by !== null && lockedByClean !== miUsuarioClean;
@@ -250,12 +338,27 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       <span className="text-xs text-gray-500">{entidad.fecha_ultima_compra ? new Date(entidad.fecha_ultima_compra).toLocaleString() : '—'}</span>
                       <div className={`relative ${hoveredEntityId === idEntidadFinal ? 'z-50' : 'z-0'}`} onMouseEnter={() => setHoveredEntityId(idEntidadFinal)} onMouseLeave={() => setHoveredEntityId(null)}>
                         <span className="bg-red-100 text-red-600 px-2.5 py-1 rounded-md text-[10px] font-bold border border-red-200 shadow-sm cursor-pointer block">{entidad.total_alertas || 1} alertas</span>
-                        {hoveredEntityId === idEntidadFinal && <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} />}
+                        {hoveredEntityId === idEntidadFinal && <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} subTabFraud={subTabFraud} />}
                       </div>
                     </div>
                     <div className="mb-4">
                       <h3 className="font-bold text-gray-800 text-base leading-tight flex items-center gap-2 flex-wrap">
                         <span>{entidad.cliente || 'No registrado'}</span>
+                        
+                        {/* 🚀 BADGE CONDICIONAL MÓVIL */}
+                        {entidad.fraud_type && (
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shadow-xs uppercase tracking-tight ${
+                            entidad.fraud_type === 'FRAUD_FRUSTRATED' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                            entidad.fraud_type === 'FRAUD_MERCHANT_ASSUMED' ? 'bg-rose-100 text-rose-700 border border-rose-300' :
+                            entidad.fraud_type === 'FRAUD_LOSS' ? 'bg-red-100 text-red-700 border border-red-300' :
+                            'bg-gray-100 text-gray-700 border border-gray-200'
+                          }`}>
+                            {entidad.fraud_type === 'FRAUD_FRUSTRATED' ? '🛡️ Frustrado' :
+                             entidad.fraud_type === 'FRAUD_MERCHANT_ASSUMED' ? '🏪 Asumido Comercio' :
+                             entidad.fraud_type === 'FRAUD_LOSS' ? '💸 Pérdida' : entidad.fraud_type}
+                          </span>
+                        )}
+
                         {isLockedBySomeoneElse && (
                           <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-bold animate-pulse">
                             🔒 {entidad.locked_by.split('@')[0]}
