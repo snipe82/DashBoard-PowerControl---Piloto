@@ -25,7 +25,6 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
   
   const [alertToInspect, setAlertToInspect] = useState(null);
 
-  // 🚀 ESTADOS PARA EL BOTÓN DE PÁNICO (Alerta Manual)
   const [eventoParaAlerta, setEventoParaAlerta] = useState(null);
   const [comentarioManual, setComentarioManual] = useState('');
   const [severidadManual, setSeveridadManual] = useState('HIGH');
@@ -178,7 +177,6 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
     setActiveTab('ALERTAS');
   };
 
-  // 🚀 FUNCIÓN PARA GATILLAR ALERTA MANUAL
   const generarAlertaManual = async (e) => {
     e.preventDefault();
     if (!comentarioManual.trim()) {
@@ -207,6 +205,29 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
     } finally {
       setEnviandoAlerta(false);
     }
+  };
+
+  // 🚀 ESCÁNER DE SEVERIDAD DE EVENTO
+  const determinarEstadoEvento = (evt) => {
+    if (!evt.alerts_summary?.has_alerts || !evt.alerts_summary?.details || evt.alerts_summary.details.length === 0) {
+      return { tipo: 'CLEAN', label: 'Limpio', icon: '✅', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
+    }
+
+    const estados = evt.alerts_summary.details.map(a => String(a.status).toUpperCase());
+    
+    if (estados.some(s => s === 'FRAUD' || s === 'CLOSED_CONFIRMED_FRAUD')) {
+      return { tipo: 'FRAUD', label: 'Fraude Confirmado', icon: '🚨', color: 'bg-red-100 text-red-700 border-red-300' };
+    }
+    if (estados.some(s => s === 'SUSPICIOUS')) {
+      return { tipo: 'SUSPICIOUS', label: 'Bajo Sospecha', icon: '👀', color: 'bg-orange-100 text-orange-700 border-orange-300' };
+    }
+    
+    const puramenteDescartado = estados.every(s => s === 'DISCARDED' || s === 'CLOSED_FALSE_POSITIVE');
+    if (puramenteDescartado) {
+      return { tipo: 'DISCARDED', label: 'Falso Positivo', icon: '🗑️', color: 'bg-gray-100 text-gray-500 border-gray-200' };
+    }
+
+    return { tipo: 'PENDING', label: `${evt.alerts_summary.total_alerts} Alerta(s) Activas`, icon: '⚠️', color: 'bg-amber-50 text-amber-600 border-amber-200' };
   };
 
   const totalEncontrados = eventos.length;
@@ -336,7 +357,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                 <th className="px-5 py-3.5">ID Solicitud / DNI</th>
                 <th className="px-5 py-3.5">Contacto Principal</th>
                 <th className="px-5 py-3.5">Tipo Evento</th>
-                <th className="px-5 py-3.5 text-center">Resolución Motor</th>
+                <th className="px-5 py-3.5 text-center">Diagnóstico / Estado</th>
                 <th className="px-5 py-3.5 text-right">Acción</th>
               </tr>
             </thead>
@@ -348,89 +369,88 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
               ) : eventos.length === 0 && !haBuscado ? (
                 <tr><td colSpan="7" className="text-center py-20 text-gray-400 italic font-medium">Establece un rango horario y presiona buscar.</td></tr>
               ) : (
-                eventos.map((evt) => (
-                  <tr key={evt.event_id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-5 py-3 font-mono">
-                      <p className="font-bold text-gray-800">{evt.dates?.lima?.split(',')[0]}</p>
-                      <p className="text-[10px] text-power-purple font-bold mt-0.5">{evt.dates?.lima?.split(',')[1]?.trim()}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <p className="font-black text-gray-800 uppercase tracking-tight">
-                        {evt.customer_details?.full_name || 'TITULAR NO REGISTRADO'}
-                      </p>
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">Cust ID: {evt.customer_id}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <p className="font-bold text-power-blue font-mono">{evt.application_id}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5 font-bold">DNI: {evt.customer_details?.dni || '—'}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-700">{evt.customer_details?.celular || 'N/A'}</span>
-                        {evt.customer_details?.previous_phone && (
-                          <div className="relative flex items-center cursor-help">
-                            <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wide uppercase shadow-2xs">
-                              Historial
-                            </span>
+                eventos.map((evt) => {
+                  // 🚀 EVALUAMOS EL ESTADO REAL DEL EVENTO EN TIEMPO REAL
+                  const statusInfo = determinarEstadoEvento(evt);
+                  
+                  return (
+                    <tr key={evt.event_id} className="hover:bg-slate-50 transition-colors group">
+                      <td className="px-5 py-3 font-mono">
+                        <p className="font-bold text-gray-800">{evt.dates?.lima?.split(',')[0]}</p>
+                        <p className="text-[10px] text-power-purple font-bold mt-0.5">{evt.dates?.lima?.split(',')[1]?.trim()}</p>
+                      </td>
+                      <td className="px-5 py-3">
+                        <p className="font-black text-gray-800 uppercase tracking-tight">
+                          {evt.customer_details?.full_name || 'TITULAR NO REGISTRADO'}
+                        </p>
+                        <p className="text-[10px] text-gray-400 font-mono mt-0.5">Cust ID: {evt.customer_id}</p>
+                      </td>
+                      <td className="px-5 py-3">
+                        <p className="font-bold text-power-blue font-mono">{evt.application_id}</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5 font-bold">DNI: {evt.customer_details?.dni || '—'}</p>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-700">{evt.customer_details?.celular || 'N/A'}</span>
+                          {evt.customer_details?.previous_phone && (
+                            <div className="relative flex items-center cursor-help">
+                              <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wide uppercase shadow-2xs">
+                                Historial
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">
+                          {evt.event_type}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        {/* 🚀 BADGE INTELIGENTE DE DIAGNÓSTICO */}
+                        <div className={`inline-flex items-center gap-1.5 border px-2.5 py-0.5 rounded-md shadow-xs ${statusInfo.color}`}>
+                          <span className="text-[10px]">{statusInfo.icon}</span>
+                          <span className="text-[9px] font-black uppercase tracking-wider">{statusInfo.label}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {onSelectEvent ? (
+                          <button 
+                            onClick={() => onSelectEvent(evt)} 
+                            className="text-white font-black text-[11px] bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg transition-colors shadow-sm active:scale-95 whitespace-nowrap"
+                          >
+                            ⚡ Seleccionar
+                          </button>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                            {/* BOTÓN DE PÁNICO (Alerta Manual) */}
+                            <button 
+                              onClick={() => setEventoParaAlerta(evt)} 
+                              className="text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-bold text-[10px] px-2 py-1 rounded-md transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Generar Alerta de Fraude Manual"
+                            >
+                              🚨 Gatillar Alerta
+                            </button>
+                            
+                            <button 
+                              onClick={() => abrirVisorForense(evt)} 
+                              className="text-power-purple font-black text-[11px] bg-power-purple/5 hover:bg-power-purple/10 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap border border-power-purple/20 active:scale-95"
+                            >
+                              Ver Trama
+                            </button>
                           </div>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">
-                        {evt.event_type}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      {evt.alerts_summary?.has_alerts ? (
-                        <div className="inline-flex items-center gap-1 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full shadow-2xs">
-                          <span className="text-rose-500 text-[10px]">⚠️</span>
-                          <span className="text-[9px] font-black text-rose-600 uppercase tracking-wider">{evt.alerts_summary.total_alerts} Alertas</span>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-2xs">
-                          <span className="text-emerald-500 text-[10px]">✅</span>
-                          <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Limpio</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {onSelectEvent ? (
-                        <button 
-                          onClick={() => onSelectEvent(evt)} 
-                          className="text-white font-black text-[11px] bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg transition-colors shadow-sm active:scale-95 whitespace-nowrap"
-                        >
-                          ⚡ Seleccionar
-                        </button>
-                      ) : (
-                        <div className="flex items-center justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                          {/* 🚀 BOTÓN DE PÁNICO (Alerta Manual) */}
-                          <button 
-                            onClick={() => setEventoParaAlerta(evt)} 
-                            className="text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-bold text-[10px] px-2 py-1 rounded-md transition-colors shadow-xs flex items-center gap-1 active:scale-95"
-                            title="Generar Alerta de Fraude Manual"
-                          >
-                            🚨 Gatillar Alerta
-                          </button>
-                          
-                          <button 
-                            onClick={() => abrirVisorForense(evt)} 
-                            className="text-power-purple font-black text-[11px] bg-power-purple/5 hover:bg-power-purple/10 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap border border-power-purple/20 active:scale-95"
-                          >
-                            Ver Trama
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 🚀 MODAL: GENERACIÓN DE ALERTA MANUAL */}
+      {/* MODAL: GENERACIÓN DE ALERTA MANUAL */}
       {eventoParaAlerta && (
         <div className="fixed inset-0 bg-slate-900/70 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-red-200 overflow-hidden">
@@ -548,7 +568,7 @@ const EventsSearch = ({ isModal = false, onClose, initialDni = '', initialAppId 
                               <td className="px-4 py-2.5 font-mono text-gray-500 font-bold">#{al.alert_id}</td>
                               <td className="px-4 py-2.5 font-black text-power-purple">{al.rule_code}</td>
                               <td className="px-4 py-2.5">
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${al.status === 'PENDING' ? 'bg-amber-50 text-amber-600 border-amber-200' : al.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${al.status === 'PENDING' ? 'bg-amber-50 text-amber-600 border-amber-200' : al.status === 'FRAUD' || al.status === 'CLOSED_CONFIRMED_FRAUD' ? 'bg-red-50 text-red-600 border-red-200' : al.status === 'SUSPICIOUS' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
                                   {al.status}
                                 </span>
                               </td>
