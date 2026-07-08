@@ -26,11 +26,22 @@ const RulesWorkflow = ({ onEditRule }) => {
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState('');
 
-  // 🚀 ESTADOS PARA EL VISOR DE DIFERENCIAS (AUDITORÍA DE PASE A PROD)
+  // ESTADOS PARA EL VISOR DE DIFERENCIAS (AUDITORÍA DE PASE A PROD)
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [selectedRuleForDiff, setSelectedRuleForDiff] = useState(null);
   const [prodVersionData, setProdVersionData] = useState(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
+
+  // ESTADOS PARA EL SIMULADOR HISTÓRICO (BACKTESTING)
+  const [simModalOpen, setSimModalOpen] = useState(false);
+  const [ruleToSimulate, setRuleToSimulate] = useState(null);
+  const [simParams, setSimParams] = useState({ start_date: '', end_date: '' });
+  const [simLoading, setSimLoading] = useState(false);
+  const [simResult, setSimResult] = useState(null);
+  const [simError, setSimError] = useState('');
+  
+  // 🚀 ESTADO PARA LAS PESTAÑAS DEL SIMULADOR
+  const [simViewMode, setSimViewMode] = useState('RESULTS'); // 'RESULTS' o 'SQL'
 
   const leftScrollRef = useRef(null);
   const rightScrollRef = useRef(null);
@@ -64,10 +75,7 @@ const RulesWorkflow = ({ onEditRule }) => {
   };
 
   const toggleColumnDetails = (columnKey) => {
-    setExpandedColumns(prev => ({
-      ...prev,
-      [columnKey]: !prev[columnKey]
-    }));
+    setExpandedColumns(prev => ({ ...prev, [columnKey]: !prev[columnKey] }));
   };
 
   const getSeverityColor = (sev) => {
@@ -83,7 +91,6 @@ const RulesWorkflow = ({ onEditRule }) => {
   const handleMassDeploy = async () => {
     setDeploying(true);
     setDeployError('');
-    
     let errores = [];
     let procesadas = 0;
 
@@ -95,28 +102,19 @@ const RulesWorkflow = ({ onEditRule }) => {
         console.error(`Error desplegando ${rule.rule_code}:`, error);
         const status = error.response?.status;
         const msg = error.response?.data?.error || error.response?.data?.message || 'Error desconocido';
-        
-        if (status === 403) {
-          errores.push(`Acceso Denegado para ${rule.rule_code}.`);
-        } else {
-          errores.push(`Fallo en ${rule.rule_code} (HTTP ${status}): ${msg}`);
-        }
+        if (status === 403) errores.push(`Acceso Denegado para ${rule.rule_code}.`);
+        else errores.push(`Fallo en ${rule.rule_code} (HTTP ${status}): ${msg}`);
         break; 
       }
     }
 
     await fetchRules(); 
-
-    if (errores.length > 0) {
-      setDeployError(`Despliegue interrumpido. ${procesadas} regla(s) pasaron a producción con éxito. Error en la cola: ${errores[0]}`);
-    } else {
-      setDeployModalOpen(false); 
-    }
+    if (errores.length > 0) setDeployError(`Despliegue interrumpido. ${procesadas} regla(s) pasaron a producción con éxito. Error en la cola: ${errores[0]}`);
+    else setDeployModalOpen(false); 
     
     setDeploying(false);
   };
 
-  // 🚀 FUNCIÓN PARA CARGAR EL HISTORIAL Y BUSCAR LA VERSIÓN DE PRODUCCIÓN
   const handleOpenDiff = async (ruleStaged) => {
     setSelectedRuleForDiff(ruleStaged);
     setDiffModalOpen(true);
@@ -131,6 +129,52 @@ const RulesWorkflow = ({ onEditRule }) => {
       console.error("Error obteniendo historial para diff:", e);
     } finally {
       setLoadingDiff(false);
+    }
+  };
+
+  const handleOpenSimulate = (rule) => {
+    setRuleToSimulate(rule);
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 7); 
+    
+    const toLocalISO = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0,16);
+
+    setSimParams({
+      start_date: toLocalISO(start),
+      end_date: toLocalISO(end)
+    });
+    setSimResult(null);
+    setSimError('');
+    setSimViewMode('RESULTS'); // 🚀 Reinicia siempre a la vista de resultados al abrir
+    setSimModalOpen(true);
+  };
+
+  const handleRunSimulation = async (e) => {
+    e.preventDefault();
+    setSimLoading(true);
+    setSimError('');
+    setSimResult(null);
+    setSimViewMode('RESULTS'); // Vuelve a resultados al disparar una nueva simulación
+    
+    try {
+      const payload = {
+        query_sql: ruleToSimulate.query_sql,
+        start_date: new Date(simParams.start_date).toISOString(),
+        end_date: new Date(simParams.end_date).toISOString(),
+        event_type: ruleToSimulate.event_type || 'fullApplicationRT'
+      };
+      
+      const res = await api.post('/api/v1/rules/simulate', payload);
+      setSimResult(res.data?.data);
+    } catch(err) {
+      const respData = err.response?.data || {};
+      const mainError = respData.error || 'Error al ejecutar la simulación histórica.';
+      const detailError = respData.detail ? `\n\n📝 Detalle Técnico:\n${respData.detail}` : '';
+      
+      setSimError(mainError + detailError);
+    } finally {
+      setSimLoading(false);
     }
   };
 
@@ -163,30 +207,23 @@ const RulesWorkflow = ({ onEditRule }) => {
     }
   };
 
-  // 🚀 GENERADOR DE NODOS DE DIFERENCIA (PROD vs STAGED)
   const { prodSqlNodes, stagedSqlNodes } = useMemo(() => {
     if (!selectedRuleForDiff || !prodVersionData) return { prodSqlNodes: null, stagedSqlNodes: null };
-    
-    const cLines = (parseIncomingSql(selectedRuleForDiff.query_sql) || '').replace(/\r\n/g, '\n').split('\n'); // NEW (Staged)
-    const hLines = (parseIncomingSql(prodVersionData.query_sql) || '').replace(/\r\n/g, '\n').split('\n'); // OLD (Prod)
+    const cLines = (parseIncomingSql(selectedRuleForDiff.query_sql) || '').replace(/\r\n/g, '\n').split('\n'); 
+    const hLines = (parseIncomingSql(prodVersionData.query_sql) || '').replace(/\r\n/g, '\n').split('\n'); 
     
     const m = cLines.length, n = hLines.length;
     const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
     for (let i = 1; i <= m; i++) {
       for (let j = 1; j <= n; j++) {
-        if (cLines[i - 1].trim() === hLines[j - 1].trim()) {
-          dp[i][j] = dp[i - 1][j - 1] + 1;
-        } else {
-          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-        }
+        if (cLines[i - 1].trim() === hLines[j - 1].trim()) dp[i][j] = dp[i - 1][j - 1] + 1;
+        else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
       }
     }
 
     let i = m, j = n;
-    const lNodes = []; // Staged
-    const rNodes = []; // Prod
-    let lLine = m;
-    let rLine = n;
+    const lNodes = [], rNodes = []; 
+    let lLine = m, rLine = n;
 
     while (i > 0 || j > 0) {
       const cMatch = i > 0 ? cLines[i - 1].trim() : null;
@@ -210,17 +247,9 @@ const RulesWorkflow = ({ onEditRule }) => {
     const renderNode = (node, idx) => {
       let bgClass = 'text-slate-300 hover:bg-slate-800/50';
       let prefix = ' ';
-      
-      if (node.type === 'added') {
-        bgClass = 'bg-emerald-900/40 text-emerald-200 border-l-[3px] border-emerald-500';
-        prefix = '+';
-      } else if (node.type === 'removed') {
-        bgClass = 'bg-rose-900/40 text-rose-200 border-l-[3px] border-rose-500';
-        prefix = '-';
-      } else if (node.type === 'empty') {
-        bgClass = 'bg-slate-900/20 text-slate-600 select-none';
-        prefix = ' ';
-      }
+      if (node.type === 'added') { bgClass = 'bg-emerald-900/40 text-emerald-200 border-l-[3px] border-emerald-500'; prefix = '+'; } 
+      else if (node.type === 'removed') { bgClass = 'bg-rose-900/40 text-rose-200 border-l-[3px] border-rose-500'; prefix = '-'; } 
+      else if (node.type === 'empty') { bgClass = 'bg-slate-900/20 text-slate-600 select-none'; prefix = ' '; }
 
       return (
         <div key={`node-${idx}`} className={`px-2 py-[3px] font-mono text-[11px] whitespace-pre flex border-b border-transparent ${bgClass} min-h-[24px] items-center`}>
@@ -231,10 +260,7 @@ const RulesWorkflow = ({ onEditRule }) => {
       );
     };
 
-    return { 
-      prodSqlNodes: rNodes.map((n, idx) => renderNode(n, idx)), // Prod is OLD
-      stagedSqlNodes: lNodes.map((n, idx) => renderNode(n, idx)) // Staged is NEW
-    };
+    return { prodSqlNodes: rNodes.map((n, idx) => renderNode(n, idx)), stagedSqlNodes: lNodes.map((n, idx) => renderNode(n, idx)) };
   }, [selectedRuleForDiff, prodVersionData]);
 
 
@@ -271,7 +297,6 @@ const RulesWorkflow = ({ onEditRule }) => {
           </div>
         </div>
 
-        {/* VISOR DE COMENTARIO DE VERSIÓN POR TARJETA EXPANDIDA */}
         {isStageExpanded && (
           <div className="mt-1 pt-2 border-t border-slate-100 animate-fade-in text-left">
             <p className="text-[8px] font-black text-slate-400 uppercase mb-1 tracking-wider">Comentario de Versión:</p>
@@ -285,12 +310,24 @@ const RulesWorkflow = ({ onEditRule }) => {
         <div className="pt-3 border-t border-gray-100 flex justify-between items-center mt-auto">
           <span className={`w-2 h-2 rounded-full shrink-0 ${rule.is_active ? 'bg-emerald-500' : 'bg-rose-400'}`} title={rule.is_active ? 'Encendida' : 'Apagada'}></span>
           
-          <button 
-            onClick={() => onEditRule({ ...rule, _fromWorkflow: true })} 
-            className="text-[10px] font-bold text-power-purple hover:text-white hover:bg-power-purple bg-power-purple/5 px-2 py-1.5 rounded-lg transition-colors border border-power-purple/20 truncate ml-2"
-          >
-            {rule.lifecycle_status === 'DEPLOYED' ? '👁️ Inspeccionar' : '✅ Auditar'}
-          </button>
+          <div className="flex gap-2">
+            {stageKey === 'TESTING' && (
+              <button 
+                onClick={() => handleOpenSimulate(rule)} 
+                className="text-[10px] font-bold text-amber-600 hover:text-white hover:bg-amber-500 bg-amber-500/10 px-2 py-1.5 rounded-lg transition-colors border border-amber-500/20 truncate"
+                title="Ejecutar Simulación en Backtesting"
+              >
+                🧪 Simular
+              </button>
+            )}
+            
+            <button 
+              onClick={() => onEditRule({ ...rule, _fromWorkflow: true })} 
+              className="text-[10px] font-bold text-power-purple hover:text-white hover:bg-power-purple bg-power-purple/5 px-2 py-1.5 rounded-lg transition-colors border border-power-purple/20 truncate"
+            >
+              {rule.lifecycle_status === 'DEPLOYED' ? '👁️ Inspeccionar' : '✅ Auditar'}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -324,7 +361,6 @@ const RulesWorkflow = ({ onEditRule }) => {
       ) : (
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4 custom-scrollbar min-h-0 select-none">
           
-          {/* 📝 COLUMNA: DRAFT */}
           <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-slate-50 rounded-2xl border border-slate-200 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100/50 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-slate-700 flex items-center gap-1.5 text-sm truncate">
@@ -334,13 +370,8 @@ const RulesWorkflow = ({ onEditRule }) => {
                 <button 
                   onClick={() => toggleColumnDetails('DRAFT')} 
                   className={`p-1.5 rounded-lg border text-xs transition-colors ${expandedColumns.DRAFT ? 'bg-power-purple/10 border-power-purple/20 text-power-purple' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-200'}`}
-                  title="Mostrar comentarios de versión"
-                >
-                  👁️
-                </button>
-                <span className="bg-white text-slate-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-slate-200">
-                  {workflow.DRAFT.length}
-                </span>
+                >👁️</button>
+                <span className="bg-white text-slate-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-slate-200">{workflow.DRAFT.length}</span>
               </div>
             </div>
             <div className="p-2 xl:p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
@@ -349,7 +380,6 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          {/* 🧪 COLUMNA: TESTING */}
           <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-amber-50/30 rounded-2xl border border-amber-200/50 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-amber-100 flex justify-between items-center bg-amber-100/30 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-amber-800 flex items-center gap-1.5 text-sm truncate">
@@ -359,13 +389,8 @@ const RulesWorkflow = ({ onEditRule }) => {
                 <button 
                   onClick={() => toggleColumnDetails('TESTING')} 
                   className={`p-1.5 rounded-lg border text-xs transition-colors ${expandedColumns.TESTING ? 'bg-power-purple/10 border-power-purple/20 text-power-purple' : 'bg-white border-amber-200 text-amber-600 hover:bg-amber-100/40'}`}
-                  title="Mostrar comentarios de versión"
-                >
-                  👁️
-                </button>
-                <span className="bg-white text-amber-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-amber-200">
-                  {workflow.TESTING.length}
-                </span>
+                >👁️</button>
+                <span className="bg-white text-amber-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-amber-200">{workflow.TESTING.length}</span>
               </div>
             </div>
             <div className="p-2 xl:p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
@@ -374,7 +399,6 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          {/* ⏳ COLUMNA: PENDING_APPROVAL */}
           <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-orange-50/30 rounded-2xl border border-orange-200/50 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-orange-100 flex justify-between items-center bg-orange-100/30 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-orange-800 flex items-center gap-1.5 text-sm truncate">
@@ -384,13 +408,8 @@ const RulesWorkflow = ({ onEditRule }) => {
                 <button 
                   onClick={() => toggleColumnDetails('PENDING_APPROVAL')} 
                   className={`p-1.5 rounded-lg border text-xs transition-colors ${expandedColumns.PENDING_APPROVAL ? 'bg-power-purple/10 border-power-purple/20 text-power-purple' : 'bg-white border-orange-200 text-orange-600 hover:bg-orange-100/40'}`}
-                  title="Mostrar comentarios de versión"
-                >
-                  👁️
-                </button>
-                <span className="bg-white text-orange-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-orange-200">
-                  {workflow.PENDING_APPROVAL.length}
-                </span>
+                >👁️</button>
+                <span className="bg-white text-orange-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-orange-200">{workflow.PENDING_APPROVAL.length}</span>
               </div>
             </div>
             <div className="p-2 xl:p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
@@ -399,7 +418,6 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          {/* 📦 COLUMNA: STAGED */}
           <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-blue-50/40 rounded-2xl border border-blue-200/60 shadow-inner h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-blue-200 flex flex-col gap-3 bg-blue-100/50 rounded-t-2xl shrink-0">
               <div className="flex justify-between items-center gap-2">
@@ -410,13 +428,8 @@ const RulesWorkflow = ({ onEditRule }) => {
                   <button 
                     onClick={() => toggleColumnDetails('STAGED')} 
                     className={`p-1.5 rounded-lg border text-xs transition-colors ${expandedColumns.STAGED ? 'bg-power-purple/10 border-power-purple/20 text-power-purple' : 'bg-white border-blue-200 text-blue-600 hover:bg-blue-100/40'}`}
-                    title="Mostrar comentarios de versión"
-                  >
-                    👁️
-                  </button>
-                  <span className="bg-white text-blue-700 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-blue-200">
-                    {workflow.STAGED.length}
-                  </span>
+                  >👁️</button>
+                  <span className="bg-white text-blue-700 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-blue-200">{workflow.STAGED.length}</span>
                 </div>
               </div>
               
@@ -435,7 +448,6 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          {/* 🚀 COLUMNA: DEPLOYED */}
           <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-emerald-50/30 rounded-2xl border border-emerald-200/50 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-emerald-100 flex justify-between items-center bg-emerald-100/30 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-emerald-800 flex items-center gap-1.5 text-sm truncate">
@@ -445,13 +457,8 @@ const RulesWorkflow = ({ onEditRule }) => {
                 <button 
                   onClick={() => toggleColumnDetails('DEPLOYED')} 
                   className={`p-1.5 rounded-lg border text-xs transition-colors ${expandedColumns.DEPLOYED ? 'bg-power-purple/10 border-power-purple/20 text-power-purple' : 'bg-white border-emerald-200 text-emerald-600 hover:bg-emerald-100/40'}`}
-                  title="Mostrar comentarios de versión"
-                >
-                  👁️
-                </button>
-                <span className="bg-white text-emerald-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-emerald-200">
-                  {workflow.DEPLOYED.length}
-                </span>
+                >👁️</button>
+                <span className="bg-white text-emerald-600 font-black text-xs px-2 py-1 rounded-md shadow-sm border border-emerald-200">{workflow.DEPLOYED.length}</span>
               </div>
             </div>
             <div className="p-2 xl:p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
@@ -463,11 +470,227 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
       )}
 
-      {/* 🚀 MODAL DE CONFIRMACIÓN DE DESPLIEGUE MASIVO CON AUDITORÍA (Z-INDEX: 200) */}
+      {/* 🚀 MODAL DEL SIMULADOR DE BACKTESTING */}
+      {simModalOpen && ruleToSimulate && (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[250] backdrop-blur-sm p-4 animate-fade-in">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden">
+              <div className="bg-slate-950 p-4 border-b border-slate-800 flex justify-between items-center shrink-0">
+                 <div>
+                   <h2 className="text-lg font-black text-white flex items-center gap-2">
+                     <span>🧪</span> Simulador Histórico (Backtesting)
+                   </h2>
+                   <p className="text-[10px] text-slate-400 font-mono mt-0.5">Evaluando regla: {ruleToSimulate.rule_code} | {ruleToSimulate.rule_name}</p>
+                 </div>
+                 <button onClick={() => setSimModalOpen(false)} className="text-gray-400 hover:text-white bg-slate-800 hover:bg-rose-600 w-8 h-8 rounded-full flex items-center justify-center transition-colors text-sm font-bold">✕</button>
+              </div>
+              
+              <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                  <div className="w-full md:w-1/3 xl:w-1/4 bg-slate-50 border-r border-slate-200 p-5 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+                     
+                     <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in relative overflow-hidden">
+                       <div className="absolute top-0 left-0 w-full h-1 bg-amber-400"></div>
+                       <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-100 pb-1.5">Regla en Evaluación</h4>
+                       <div className="flex items-center gap-2 mb-2">
+                         <span className="font-mono text-[10px] font-bold text-power-purple bg-power-purple/10 px-2 py-0.5 rounded border border-power-purple/20">{ruleToSimulate.rule_code}</span>
+                         <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${getSeverityColor(ruleToSimulate.severity)}`}>{ruleToSimulate.severity}</span>
+                       </div>
+                       <p className="text-sm font-black text-slate-800 leading-tight mb-2">{ruleToSimulate.rule_name}</p>
+                       <div className="text-[10px] text-slate-500 leading-relaxed italic border-l-[3px] border-slate-200 pl-2 bg-slate-50/50 py-1.5">
+                         {ruleToSimulate.description || ruleToSimulate.rule_description || ruleToSimulate.version_comment || 'Sin descripción detallada disponible para esta versión.'}
+                       </div>
+                     </div>
+
+                     <h3 className="font-black text-slate-700 text-sm uppercase tracking-wider mb-4 border-b pb-2">Parámetros Temporales</h3>
+                     <form onSubmit={handleRunSimulation} className="flex flex-col gap-4">
+                         <div>
+                           <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Tipo de Evento Transaccional</label>
+                           <input type="text" readOnly value={ruleToSimulate.event_type || 'fullApplicationRT'} className="w-full p-2 border border-gray-200 rounded-lg text-xs bg-gray-100 font-mono text-gray-600 outline-none" />
+                         </div>
+                         <div>
+                           <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Desde (Hora Local Perú)</label>
+                           <input type="datetime-local" value={simParams.start_date} onChange={e => setSimParams({...simParams, start_date: e.target.value})} required className="w-full p-2 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-power-purple text-gray-700 font-bold bg-white" />
+                         </div>
+                         <div>
+                           <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Hasta (Hora Local Perú)</label>
+                           <input type="datetime-local" value={simParams.end_date} onChange={e => setSimParams({...simParams, end_date: e.target.value})} required className="w-full p-2 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-power-purple text-gray-700 font-bold bg-white" />
+                         </div>
+                         
+                         {simError && (
+                           <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-[10px] font-bold mt-2 shadow-sm whitespace-pre-wrap">
+                             🛑 {simError}
+                           </div>
+                         )}
+
+                         <button type="submit" disabled={simLoading} className="mt-4 w-full bg-power-purple hover:bg-power-purple/90 text-white font-black py-3 rounded-xl shadow-md transition-all active:scale-95 text-xs flex justify-center items-center gap-2 disabled:opacity-60">
+                             {simLoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '▶️ Ejecutar Simulación'}
+                         </button>
+                     </form>
+                  </div>
+                  
+                  <div className="flex-1 bg-white flex flex-col overflow-hidden relative">
+                      {/* 🚀 NUEVAS PESTAÑAS (TABS) DEL SIMULADOR */}
+                      <div className="flex border-b border-slate-200 shrink-0 bg-slate-50 pt-2 px-2 gap-1">
+                          <button 
+                            type="button" 
+                            onClick={() => setSimViewMode('RESULTS')} 
+                            className={`px-4 py-2.5 rounded-t-xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-colors ${simViewMode === 'RESULTS' ? 'bg-white text-power-blue border-t border-l border-r border-slate-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                          >
+                            📊 Resultados y Métricas
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => setSimViewMode('SQL')} 
+                            className={`px-4 py-2.5 rounded-t-xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-colors ${simViewMode === 'SQL' ? 'bg-white text-power-blue border-t border-l border-r border-slate-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                          >
+                            💻 Código SQL de la Regla
+                          </button>
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+                          {/* VISTA 1: RESULTADOS (Render Condicional) */}
+                          {simViewMode === 'RESULTS' && (
+                              <>
+                                  {!simResult && !simLoading && (
+                                      <div className="h-full flex flex-col items-center justify-center text-center px-4 animate-fade-in">
+                                          <span className="text-6xl mb-4 opacity-30">📉</span>
+                                          <h3 className="text-xl font-black text-slate-700">Listo para el Backtesting</h3>
+                                          <p className="text-xs text-slate-500 max-w-sm mt-2 leading-relaxed">Configura el rango de fechas en el panel lateral y ejecuta el motor. La regla SQL se evaluará contra transacciones históricas reales extraídas de la caja negra.</p>
+                                      </div>
+                                  )}
+
+                                  {simLoading && (
+                                      <div className="h-full flex flex-col items-center justify-center text-center px-4 animate-fade-in">
+                                          <div className="w-14 h-14 border-4 border-power-purple/30 border-t-power-purple rounded-full animate-spin mb-4"></div>
+                                          <h3 className="text-sm font-black text-slate-700">Calculando Hit Rate y Matches...</h3>
+                                          <p className="text-xs text-slate-500 mt-2 animate-pulse">Cotejando la regla contra el historial transaccional masivo.</p>
+                                      </div>
+                                  )}
+
+                                  {simResult && !simLoading && (
+                                      <div className="animate-fade-in flex flex-col h-full">
+                                          <h3 className="font-black text-slate-700 text-sm uppercase tracking-wider mb-4 border-b pb-2">Resultados del Análisis Forense</h3>
+                                          
+                                          <div className="grid grid-cols-3 gap-3 mb-5 shrink-0">
+                                              <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col items-center justify-center text-center shadow-sm">
+                                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Muestra Evaluada</span>
+                                                  <span className="text-3xl font-black text-power-blue">{simResult.summary?.total_evaluated || 0}</span>
+                                              </div>
+                                              <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl flex flex-col items-center justify-center text-center shadow-sm">
+                                                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Detonaciones</span>
+                                                  <span className="text-3xl font-black text-rose-600">{simResult.summary?.total_triggered || 0}</span>
+                                              </div>
+                                              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col items-center justify-center text-center shadow-sm">
+                                                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Hit Rate</span>
+                                                  <span className="text-3xl font-black text-emerald-600">{simResult.summary?.hit_rate || '0.00%'}</span>
+                                              </div>
+                                          </div>
+
+                                          <div className="text-[11px] font-bold text-slate-700 mb-5 bg-blue-50 px-4 py-3 rounded-xl border border-blue-200 flex items-start gap-2 shadow-sm">
+                                              <span className="text-blue-500 text-lg leading-none">💡</span> 
+                                              <p className="mt-0.5">{simResult.summary?.message}</p>
+                                          </div>
+
+                                          <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
+                                              <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 shrink-0 flex justify-between items-center">
+                                                  <h4 className="text-[10px] font-black uppercase text-slate-600 tracking-wider">Detalle de Impactos Transaccionales</h4>
+                                                  <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold">{simResult.details?.length || 0} Registros</span>
+                                              </div>
+                                              <div className="flex-1 overflow-auto custom-scrollbar">
+                                                  <table className="w-full text-left">
+                                                      <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 text-[9px] uppercase tracking-widest text-slate-500 font-bold z-10 shadow-sm">
+                                                          <tr>
+                                                              <th className="px-4 py-2.5">Fecha/Hora (Local)</th>
+                                                              <th className="px-4 py-2.5">Identidad del Cliente</th>
+                                                              <th className="px-4 py-2.5">Detalle de Operación</th>
+                                                              <th className="px-4 py-2.5 text-center">Salida Evaluada</th>
+                                                          </tr>
+                                                      </thead>
+                                                      <tbody className="divide-y divide-slate-100 text-[11px]">
+                                                          {!simResult.details || simResult.details.length === 0 ? (
+                                                              <tr>
+                                                                  <td colSpan="4" className="text-center py-12 text-slate-400 font-medium italic">
+                                                                      La regla no hizo match con ninguna transacción en este rango de fechas. Operación 100% limpia.
+                                                                  </td>
+                                                              </tr>
+                                                          ) : (
+                                                              simResult.details.map((dt, i) => {
+                                                                  const rawDate = dt.event_time_utc || dt.event_time || dt.created_at || dt.fecha;
+                                                                  const displayDate = rawDate ? new Date(rawDate).toLocaleString() : '—';
+                                                                  
+                                                                  const rawImporte = dt.importe || dt.monto || dt.amount;
+                                                                  const displayImporte = typeof rawImporte === 'object' ? (rawImporte?.value || rawImporte?.amount || '0.00') : (rawImporte || '0.00');
+                                                                  
+                                                                  const displayComercio = typeof dt.comercio === 'object' ? JSON.stringify(dt.comercio) : dt.comercio;
+                                                                  const displayNombre = typeof dt.customer_name === 'object' ? JSON.stringify(dt.customer_name) : dt.customer_name;
+
+                                                                  return (
+                                                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                                        <td className="px-4 py-3 font-mono text-slate-600 font-medium whitespace-nowrap">{displayDate}</td>
+                                                                        <td className="px-4 py-3">
+                                                                            <p className="font-black text-slate-700 uppercase tracking-tight">{displayNombre || 'NO REGISTRADO'}</p>
+                                                                            <p className="text-[9px] text-slate-500 font-mono mt-0.5">DNI: {dt.document_number || '—'} | 📱 {dt.phone_number || '—'}</p>
+                                                                        </td>
+                                                                        <td className="px-4 py-3">
+                                                                            <p className="font-bold text-power-purple font-mono cursor-help w-max" title={`Event ID: ${dt.event_id || '—'}`}>{dt.application_id || 'N/A'}</p>
+                                                                            <p className="text-[10px] text-slate-500 mt-0.5 font-medium flex items-center gap-1.5 flex-wrap">
+                                                                               <span className="font-black text-emerald-600">S/ {parseFloat(displayImporte).toFixed(2)}</span> 
+                                                                               {displayComercio && <span className="truncate max-w-[120px]" title={displayComercio}>• {displayComercio}</span>}
+                                                                               {dt.plazo && <span>• {dt.plazo}m</span>}
+                                                                            </p>
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-center font-mono font-bold text-rose-600">
+                                                                            {JSON.stringify(dt.simulated_result)}
+                                                                        </td>
+                                                                    </tr>
+                                                                  );
+                                                              })
+                                                          )}
+                                                      </tbody>
+                                                  </table>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  )}
+                              </>
+                          )}
+
+                          {/* VISTA 2: CÓDIGO SQL (Render Condicional) */}
+                          {simViewMode === 'SQL' && (
+                              <div className="flex-1 flex flex-col bg-[#282c34] rounded-xl overflow-hidden shadow-inner border border-slate-700 animate-fade-in min-h-[300px]">
+                                  <div className="bg-slate-800 px-4 py-2.5 border-b border-slate-900 flex justify-between items-center shrink-0">
+                                      <span className="text-[10px] font-mono text-emerald-400 font-bold tracking-widest uppercase">
+                                          {ruleToSimulate.rule_code}.sql
+                                      </span>
+                                      <button 
+                                        onClick={() => navigator.clipboard.writeText(ruleToSimulate.query_sql)} 
+                                        className="text-[9px] font-black text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors active:scale-95"
+                                      >
+                                          Copiar SQL
+                                      </button>
+                                  </div>
+                                  <div className="flex-1 overflow-auto custom-scrollbar p-2">
+                                      <CodeMirror 
+                                        value={parseIncomingSql(ruleToSimulate.query_sql)} 
+                                        theme="dark" 
+                                        extensions={[sql()]} 
+                                        readOnly={true} 
+                                        editable={false} 
+                                        basicSetup={{ lineNumbers: true, foldGutter: false }} 
+                                      />
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN DE DESPLIEGUE MASIVO CON AUDITORÍA */}
       {deployModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 flex items-center justify-center z-[200] backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
-            
             <div className="flex items-center gap-3 mb-2">
               <span className="text-3xl">🚀</span>
               <div>
@@ -538,12 +761,11 @@ const RulesWorkflow = ({ onEditRule }) => {
                 )}
               </button>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* 🚀 MODAL INSPECTOR DE DIFERENCIAS (Z-INDEX: 210 - ENCIMA DEL MODAL DE DEPLOY) */}
+      {/* MODAL INSPECTOR DE DIFERENCIAS */}
       {diffModalOpen && selectedRuleForDiff && (
         <div className="fixed inset-0 bg-slate-900/95 flex flex-col z-[210] animate-fade-in backdrop-blur-md">
           <div className="p-4 flex justify-between items-center border-b border-slate-800 shrink-0 bg-slate-950">
@@ -566,7 +788,6 @@ const RulesWorkflow = ({ onEditRule }) => {
               </div>
             ) : !prodVersionData ? (
               
-              /* 🟢 VISTA PARA REGLA COMPLETAMENTE NUEVA */
               <div className="flex-1 flex flex-col rounded-xl overflow-hidden border border-emerald-500/50 shadow-2xl bg-slate-900 max-w-4xl mx-auto w-full">
                 <div className="bg-emerald-500/10 px-6 py-4 border-b border-emerald-500/30 flex justify-between items-center shrink-0">
                   <div className="flex items-center gap-3">
@@ -598,22 +819,13 @@ const RulesWorkflow = ({ onEditRule }) => {
 
                 <div className="flex-1 overflow-auto bg-[#282c34] p-4">
                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-3">Código SQL que se Inyectará:</p>
-                   <CodeMirror 
-                      value={parseIncomingSql(selectedRuleForDiff.query_sql)} 
-                      theme="dark" 
-                      extensions={[sql()]} 
-                      readOnly={true} 
-                      editable={false}
-                      basicSetup={{ lineNumbers: true, foldGutter: false }}
-                   />
+                   <CodeMirror value={parseIncomingSql(selectedRuleForDiff.query_sql)} theme="dark" extensions={[sql()]} readOnly={true} editable={false} basicSetup={{ lineNumbers: true, foldGutter: false }} />
                 </div>
               </div>
 
             ) : (
 
-              /* ⚖️ VISTA COMPARATIVA (PRODUCCIÓN VS NUEVA) */
               <>
-                {/* PANEL IZQUIERDO: PRODUCCIÓN */}
                 <div className="flex-1 flex flex-col rounded-xl overflow-hidden border border-slate-700 shadow-2xl relative">
                   <div className="bg-slate-800 px-4 py-3 flex justify-between items-center border-b border-slate-900">
                     <div>
@@ -635,16 +847,11 @@ const RulesWorkflow = ({ onEditRule }) => {
                     </div>
                   </div>
 
-                  <div 
-                    className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar"
-                    ref={rightScrollRef} 
-                    onScroll={handleScrollRight}
-                  >
+                  <div className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar" ref={rightScrollRef} onScroll={handleScrollRight}>
                     {prodSqlNodes}
                   </div>
                 </div>
 
-                {/* PANEL DERECHO: STAGED (LA QUE VA A SUBIR) */}
                 <div className="flex-1 flex flex-col rounded-xl overflow-hidden border border-power-purple/50 shadow-2xl relative">
                   <div className="bg-power-purple/20 px-4 py-3 flex justify-between items-center border-b border-power-purple/30">
                     <div>
@@ -668,11 +875,7 @@ const RulesWorkflow = ({ onEditRule }) => {
                     </div>
                   </div>
 
-                  <div 
-                    className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar"
-                    ref={leftScrollRef} 
-                    onScroll={handleScrollLeft}
-                  >
+                  <div className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar" ref={leftScrollRef} onScroll={handleScrollLeft}>
                     {stagedSqlNodes}
                   </div>
                 </div>

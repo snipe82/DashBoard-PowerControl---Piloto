@@ -120,15 +120,9 @@ app.patch('/api/alerts/entity/:id/review', async (req, res) => {
     } catch (error) { res.status(502).json({ error: "Error revisión pasarela" }); }
 });
 
-// 🚀 RUTEO MÁGICO: Si el front manda un DNI, el proxy lo manda como Entity al Backend
 app.patch('/api/alerts/dni/:dni/review', async (req, res) => {
     try {
-        // Redirigimos de /dni/:dni al endpoint universal /entity/:id del backend
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.dni}/review`, { 
-            method: 'PATCH', 
-            headers: getHeaders(req), 
-            body: JSON.stringify(req.body) 
-        });
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.dni}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (error) { res.status(502).json({ error: "Error revisión pasarela" }); }
@@ -209,7 +203,7 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // ==========================================
-// 🛠️ 4. RUTAS DEL MÓDULO DE ANÁLISIS
+// 🛠️ 4. RUTAS DEL MÓDULO DE ANÁLISIS (REGLAS Y SIMULACIÓN)
 // ==========================================
 app.get('/api/v1/rules', async (req, res) => {
     try {
@@ -223,6 +217,18 @@ app.get('/api/v1/rules/latest', async (req, res) => {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/latest`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+});
+
+// 🚀 NUEVO: RUTA DEL SIMULADOR DE BACKTESTING
+app.post('/api/v1/rules/simulate', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/simulate`, { 
+            method: 'POST', 
+            headers: getHeaders(req), 
+            body: JSON.stringify(req.body) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor de simulación no disponible.' }); }
 });
 
 app.post('/api/v1/rules/:ruleCode/draft', async (req, res) => {
@@ -264,7 +270,7 @@ app.post('/api/v1/rules/validate', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/validate`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
-    } catch (error) { res.status(503).json({ error: 'Motor no disponible.' }); }
+    } catch (error) { res.status(503).json({ error: 'Motor de validación no disponible.' }); }
 });
 
 app.get('/api/v1/rules/:ruleCode/history', async (req, res) => {

@@ -23,6 +23,19 @@ const RESPUESTAS_RAPIDAS = [
   "EN INVESTIGACIÓN"
 ];
 
+// 🚀 ESCUDOS ANTI-CRASH (Evita que objetos del backend rompan React)
+const safeString = (val, fallback = '—') => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+};
+
+const extractAmount = (m) => {
+  if (m === null || m === undefined) return 0;
+  if (typeof m === 'object') return parseFloat(m.value || m.amount || m.basevalue || 0);
+  return parseFloat(m || 0);
+};
+
 const ReviewDrawer = ({ 
   isOpen, 
   onClose, 
@@ -167,10 +180,10 @@ const ReviewDrawer = ({
 
             sortedAlerts.forEach(al => {
               const fechaSinSegundos = al.fecha ? new Date(al.fecha).setSeconds(0, 0) : '0';
-              const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${al.monto}`;
+              const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${safeString(al.monto)}`;
               if (!txProcesadas.has(txKey)) {
                 txProcesadas.add(txKey);
-                totalMontoReal += parseFloat(al.monto || 0);
+                totalMontoReal += extractAmount(al.monto);
               }
             });
 
@@ -265,6 +278,13 @@ const ReviewDrawer = ({
 
     let isDrawerActive = true; 
 
+    // 🚀 LÓGICA DE EXTRACCIÓN SEGURA DE MENSAJES DE ERROR PARA EVITAR CRASHES
+    const safeErrorMsg = (data, defaultMsg) => {
+        let m = data?.error || data?.message || defaultMsg;
+        if (typeof m === 'object') return JSON.stringify(m);
+        return String(m);
+    };
+
     const lockTimeoutId = setTimeout(() => {
       api.post(`/api/alerts/${selectedAlertId}/lock`)
         .then(() => {
@@ -285,11 +305,11 @@ const ReviewDrawer = ({
           if (err.response && err.response.status === 409) {
             setBloqueadoPorOtro(true);
             setEsInmutable(false);
-            setMensajeBloqueo(err.response.data?.error || err.response.data?.message || 'Esta alerta ya está siendo revisada por otro analista.');
+            setMensajeBloqueo(safeErrorMsg(err.response.data, 'Esta alerta ya está siendo revisada por otro analista.'));
           } else if (err.response && err.response.status === 400) {
             setBloqueadoPorOtro(true);
             setEsInmutable(true); 
-            setMensajeBloqueo(err.response.data?.error || err.response.data?.message || 'La alerta se encuentra en un estado inmutable de solo lectura.');
+            setMensajeBloqueo(safeErrorMsg(err.response.data, 'La alerta se encuentra en un estado inmutable de solo lectura.'));
           }
         });
     }, 400);
@@ -392,6 +412,7 @@ const ReviewDrawer = ({
     if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
     if (cargandoPayload) return alert("Por favor, espera a que cargue la información del evento seleccionado.");
     
+    // 🚀 LÓGICA INTELIGENTE DE EXTRACCIÓN DE ID: Busca en Payload, luego en Alerta, luego en Contexto
     let idParaRuta = payloadData?.customerid || payloadData?.customerId || payloadData?.customer_id;
     if (!idParaRuta) idParaRuta = payloadData?.document_number || payloadData?.dni || alertaActiva.dni || alertaActiva.document_number || alertaActiva.customer_id || alertaActiva.codigo_entidad;
     if (!idParaRuta && info?.id_value) idParaRuta = info.id_value;
@@ -480,8 +501,8 @@ const ReviewDrawer = ({
             <EventsSearch 
               isModal={true} 
               onClose={() => setShowParallelEvents(false)} 
-              initialDni={dniParaParallelLookup}       
-              initialAppId={appIdParaParallelLookup}   
+              initialDni={safeString(dniParaParallelLookup, '')}       
+              initialAppId={safeString(appIdParaParallelLookup, '')}   
             />
           </div>
         )}
@@ -532,7 +553,7 @@ const ReviewDrawer = ({
                       {esInmutable ? 'Expediente Histórico (Solo Lectura)' : 'Control de Concurrencia'}
                     </p>
                     <p className="font-medium text-xs sm:text-sm leading-snug break-words">
-                      {mensajeBloqueo}
+                      {safeString(mensajeBloqueo)}
                     </p>
                   </div>
                 </div>
@@ -543,25 +564,25 @@ const ReviewDrawer = ({
                   <div className="bg-white rounded-xl p-4 border border-gray-200 grid grid-cols-2 gap-4 shadow-sm text-sm">
                     <div className="col-span-2 border-b border-gray-100 pb-2 mb-2 flex items-start justify-between">
                       <div>
-                        <p className="text-[10px] text-gray-500 uppercase font-bold">{info.display_label}</p>
-                        <p className="text-lg font-black text-gray-800 leading-tight">{info.display_name}</p>
+                        <p className="text-[10px] text-gray-500 uppercase font-bold">{safeString(info.display_label)}</p>
+                        <p className="text-lg font-black text-gray-800 leading-tight">{safeString(info.display_name)}</p>
                       </div>
                       <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded shadow-xs ml-2 shrink-0 ${info.status === 'FRAUD' || info.status === 'CLOSED_CONFIRMED_FRAUD' ? 'bg-red-50 text-red-600 border border-red-200' : info.status === 'DISCARDED' ? 'bg-gray-50 text-gray-600 border border-gray-200' : info.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' : info.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border border-purple-200' : 'bg-blue-50 text-blue-600 border border-blue-200'}`}>
                         {traducirEstado(info.status)}
                       </span>
                     </div>
                     <div>
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">{info.id_label}</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">{safeString(info.id_label)}</p>
                       <div className="flex items-center space-x-2 mt-0.5">
-                        <p className="font-bold text-slate-700 font-mono text-xs bg-slate-50 px-2 py-1 rounded-md border border-slate-200 truncate max-w-[120px] md:max-w-[140px]" title={info.id_value}>
-                          {info.id_value}
+                        <p className="font-bold text-slate-700 font-mono text-xs bg-slate-50 px-2 py-1 rounded-md border border-slate-200 truncate max-w-[120px] md:max-w-[140px]" title={safeString(info.id_value)}>
+                          {safeString(info.id_value)}
                         </p>
-                        <button onClick={() => navigator.clipboard.writeText(info.id_value)} className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center shrink-0">📋</button>
+                        <button onClick={() => navigator.clipboard.writeText(safeString(info.id_value, ''))} className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-xs hover:text-power-purple transition-all active:scale-95 text-xs flex items-center justify-center shrink-0">📋</button>
                       </div>
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado</p>
-                      <p className="font-bold text-red-600 text-lg mt-0.5">S/ {parseFloat(info.monto_total || 0).toFixed(2)}</p>
+                      <p className="font-bold text-red-600 text-lg mt-0.5">S/ {extractAmount(info.monto_total).toFixed(2)}</p>
                     </div>
                   </div>
 
@@ -581,7 +602,7 @@ const ReviewDrawer = ({
                     <div className="col-span-2 md:col-span-1">
                       <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tipo Entidad</span>
                       <span className="text-[11px] font-semibold text-slate-800 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 block shadow-xs truncate uppercase">
-                        {info.entidad_nombre}
+                        {safeString(info.entidad_nombre)}
                       </span>
                     </div>
                   </div>
@@ -605,21 +626,24 @@ const ReviewDrawer = ({
                                  <div className="mt-1 shrink-0"><input type="radio" checked={estaSeleccionado} readOnly className="h-3.5 w-3.5 text-power-purple focus:ring-power-purple border-gray-300 accent-power-purple cursor-pointer" /></div>
                                  <div className="min-w-0 flex-1">
                                    <div className="flex items-start gap-1.5 mb-1">
-                                     <span className="font-mono text-[9px] md:text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 font-bold uppercase tracking-tight shrink-0 mt-0.5">{al.codigoregla}</span>
-                                     <span className="text-[10px] md:text-[11px] font-black text-slate-700 break-all leading-snug" title={al.regla}>{al.regla || 'Alerta de riesgo'}</span>
+                                     <span className="font-mono text-[9px] md:text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 font-bold uppercase tracking-tight shrink-0 mt-0.5">{safeString(al.codigoregla)}</span>
+                                     <span className="text-[10px] md:text-[11px] font-black text-slate-700 break-all leading-snug" title={safeString(al.regla)}>{safeString(al.regla, 'Alerta de riesgo')}</span>
                                    </div>
-                                   <span className="text-[10px] md:text-[11px] text-gray-500 font-medium block">{new Date(al.fecha).toLocaleString()}</span>
+                                   <span className="text-[10px] md:text-[11px] text-gray-500 font-medium block">{al.fecha ? new Date(al.fecha).toLocaleString() : '—'}</span>
                                  </div>
                                </div>
-                               <div className="text-right shrink-0 ml-2"><span className="font-black text-gray-800 text-sm md:text-base block leading-tight">S/ {parseFloat(al.monto || 0).toFixed(2)}</span><span className="block text-[9px] md:text-[10px] text-slate-400 truncate max-w-[90px] md:max-w-[120px]" title={al.event_type}>{al.event_type || '—'}</span></div>
+                               <div className="text-right shrink-0 ml-2">
+                                 <span className="font-black text-gray-800 text-sm md:text-base block leading-tight">S/ {extractAmount(al.monto).toFixed(2)}</span>
+                                 <span className="block text-[9px] md:text-[10px] text-slate-400 truncate max-w-[90px] md:max-w-[120px]" title={safeString(al.event_type)}>{safeString(al.event_type)}</span>
+                               </div>
                              </div>
                              <div className="mb-2 bg-slate-50/80 rounded-lg p-2 md:p-2.5 border border-slate-100 text-[10px] md:text-[11px] space-y-1">
-                               <div className="flex justify-between items-center"><span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Comercio:</span><span className="font-medium text-gray-700 truncate text-right">{nombreComercio}</span></div>
-                               <div className="flex justify-between items-center"><span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Cliente:</span><span className="font-medium text-gray-700 truncate text-right">{al.cliente}</span></div>
+                               <div className="flex justify-between items-center"><span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Comercio:</span><span className="font-medium text-gray-700 truncate text-right">{safeString(nombreComercio)}</span></div>
+                               <div className="flex justify-between items-center"><span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Cliente:</span><span className="font-medium text-gray-700 truncate text-right">{safeString(al.cliente)}</span></div>
                              </div>
                              <div className="flex items-center justify-between text-[10px] md:text-[11px] pt-1">
-                                <div className="flex items-center gap-1.5"><span className="font-bold text-gray-400 uppercase tracking-wider">DNI:</span><span className="font-mono font-bold text-gray-600">{al.dni || '—'}</span>{al.dni && <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(al.dni); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 flex items-center justify-center shadow-xs">📋</button>}</div>
-                                <div className="flex items-center gap-1.5"><span className="font-bold text-gray-400 uppercase tracking-wider">Telf:</span><span className="font-semibold text-gray-600">{textCelular}</span>{phoneFinal && <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(phoneFinal); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 flex items-center justify-center shadow-xs">📋</button>}</div>
+                                <div className="flex items-center gap-1.5"><span className="font-bold text-gray-400 uppercase tracking-wider">DNI:</span><span className="font-mono font-bold text-gray-600">{safeString(al.dni)}</span>{al.dni && <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(safeString(al.dni,'')); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 flex items-center justify-center shadow-xs">📋</button>}</div>
+                                <div className="flex items-center gap-1.5"><span className="font-bold text-gray-400 uppercase tracking-wider">Telf:</span><span className="font-semibold text-gray-600">{safeString(textCelular)}</span>{phoneFinal && <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(safeString(phoneFinal,'')); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 flex items-center justify-center shadow-xs">📋</button>}</div>
                              </div>
                           </div>
                         );
@@ -641,13 +665,13 @@ const ReviewDrawer = ({
                                 <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow relative top-[-6px]">
                                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-2 gap-1.5 sm:gap-0">
                                     <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-2"><span className="text-[11px] md:text-xs font-black text-gray-800">{item.reviewer_id || 'Sistema'}</span>{isBot && <span className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Automático</span>}</div>
-                                      {(item.codigo_regla || item.regla_nombre) ? <span className="text-[9px] text-gray-500 bg-gray-100 font-mono px-1.5 py-0.5 rounded border border-gray-200/50 w-fit whitespace-normal break-all leading-tight" title={item.regla_nombre}>{item.codigo_regla ? `[${item.codigo_regla}] ` : ''}{item.regla_nombre || ''}</span> : <span className="text-[9px] text-indigo-600 bg-indigo-50 font-bold px-1.5 py-0.5 rounded border border-indigo-200/50 w-fit uppercase tracking-tight flex items-center gap-1"><span className="text-[10px]">🌐</span> Acción a Nivel Cliente</span>}
+                                      <div className="flex items-center gap-2"><span className="text-[11px] md:text-xs font-black text-gray-800">{safeString(item.reviewer_id, 'Sistema')}</span>{isBot && <span className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Automático</span>}</div>
+                                      {(item.codigo_regla || item.regla_nombre) ? <span className="text-[9px] text-gray-500 bg-gray-100 font-mono px-1.5 py-0.5 rounded border border-gray-200/50 w-fit whitespace-normal break-all leading-tight" title={safeString(item.regla_nombre)}>{item.codigo_regla ? `[${safeString(item.codigo_regla)}] ` : ''}{safeString(item.regla_nombre, '')}</span> : <span className="text-[9px] text-indigo-600 bg-indigo-50 font-bold px-1.5 py-0.5 rounded border border-indigo-200/50 w-fit uppercase tracking-tight flex items-center gap-1"><span className="text-[10px]">🌐</span> Acción a Nivel Cliente</span>}
                                     </div>
-                                    <span className="text-[9px] md:text-[10px] text-gray-400 font-medium font-mono shrink-0">{new Date(item.fecha_comentario).toLocaleString()}</span>
+                                    <span className="text-[9px] md:text-[10px] text-gray-400 font-medium font-mono shrink-0">{item.fecha_comentario ? new Date(item.fecha_comentario).toLocaleString() : '—'}</span>
                                   </div>
                                   <div className="mb-2"><span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border shadow-xs inline-flex items-center gap-1 ${item.status === 'FRAUD' || item.status === 'CLOSED_CONFIRMED_FRAUD' ? 'bg-red-50 text-red-600 border-red-200' : item.status === 'DISCARDED' || item.status === 'CLOSED_FALSE_POSITIVE' ? 'bg-gray-50 text-gray-600 border-gray-200' : item.status === 'IN_REVIEW' ? 'bg-amber-50 text-amber-600 border-amber-200' : item.status === 'ADDITIONAL_REVIEW' ? 'bg-purple-50 text-power-purple border-purple-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}><svg className="w-2.5 h-2.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"></path></svg>{traducirEstado(item.status)}</span></div>
-                                  <div className="text-[11px] md:text-xs text-gray-600 leading-relaxed bg-slate-50/50 p-2.5 rounded border border-slate-100 whitespace-pre-wrap">{item.review_comment || <span className="italic text-gray-400">Sin comentario en este cambio de estado.</span>}</div>
+                                  <div className="text-[11px] md:text-xs text-gray-600 leading-relaxed bg-slate-50/50 p-2.5 rounded border border-slate-100 whitespace-pre-wrap">{safeString(item.review_comment, <span className="italic text-gray-400">Sin comentario en este cambio de estado.</span>)}</div>
                                 </div>
                               </div>
                             );
@@ -668,7 +692,7 @@ const ReviewDrawer = ({
                     {errorDictamen && (
                       <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm overflow-x-auto">
                         <span className="text-sm mt-0.5">🛑</span> 
-                        <pre className="font-mono whitespace-pre-wrap">{errorDictamen}</pre>
+                        <pre className="font-mono whitespace-pre-wrap">{safeString(errorDictamen)}</pre>
                       </div>
                     )}
 
