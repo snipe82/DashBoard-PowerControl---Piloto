@@ -40,8 +40,11 @@ const RulesWorkflow = ({ onEditRule }) => {
   const [simResult, setSimResult] = useState(null);
   const [simError, setSimError] = useState('');
   
-  // 🚀 ESTADO PARA LAS PESTAÑAS DEL SIMULADOR
-  const [simViewMode, setSimViewMode] = useState('RESULTS'); // 'RESULTS' o 'SQL'
+  // ESTADO PARA LAS PESTAÑAS DEL SIMULADOR
+  const [simViewMode, setSimViewMode] = useState('RESULTS'); 
+
+  // ESTADOS PARA EL MANEJO DEL ERROR (CANDADO DE APROBACIÓN)
+  const [approvalErrorModal, setApprovalErrorModal] = useState(null);
 
   const leftScrollRef = useRef(null);
   const rightScrollRef = useRef(null);
@@ -146,7 +149,7 @@ const RulesWorkflow = ({ onEditRule }) => {
     });
     setSimResult(null);
     setSimError('');
-    setSimViewMode('RESULTS'); // 🚀 Reinicia siempre a la vista de resultados al abrir
+    setSimViewMode('RESULTS'); 
     setSimModalOpen(true);
   };
 
@@ -155,10 +158,12 @@ const RulesWorkflow = ({ onEditRule }) => {
     setSimLoading(true);
     setSimError('');
     setSimResult(null);
-    setSimViewMode('RESULTS'); // Vuelve a resultados al disparar una nueva simulación
+    setSimViewMode('RESULTS'); 
     
     try {
       const payload = {
+        rule_code: ruleToSimulate.rule_code, 
+        version_number: ruleToSimulate.version_number, // 🚀 ¡EL ESLABÓN PERDIDO!
         query_sql: ruleToSimulate.query_sql,
         start_date: new Date(simParams.start_date).toISOString(),
         end_date: new Date(simParams.end_date).toISOString(),
@@ -167,6 +172,10 @@ const RulesWorkflow = ({ onEditRule }) => {
       
       const res = await api.post('/api/v1/rules/simulate', payload);
       setSimResult(res.data?.data);
+      
+      // 🚀 MAGIA: Recargamos las reglas de fondo para que el tablero se entere del nuevo sello
+      fetchRules();
+
     } catch(err) {
       const respData = err.response?.data || {};
       const mainError = respData.error || 'Error al ejecutar la simulación histórica.';
@@ -175,6 +184,24 @@ const RulesWorkflow = ({ onEditRule }) => {
       setSimError(mainError + detailError);
     } finally {
       setSimLoading(false);
+    }
+  };
+
+  const handleRequestApproval = async (rule) => {
+    try {
+      await api.put(`/api/v1/rules/${rule.rule_code}/status`, { status: 'PENDING_APPROVAL' });
+      fetchRules();
+    } catch (error) {
+      console.error("Error moviendo regla a por aprobar:", error);
+      const status = error.response?.status;
+      const data = error.response?.data || {};
+      const backendMessage = data.message || data.error || data.detail || "Debes simular esta versión de código antes de solicitar su aprobación.";
+      
+      if (status === 403 || status === 400 || status === 422) {
+         setApprovalErrorModal(backendMessage);
+      } else {
+         alert(`Error HTTP ${status || 'Desconocido'}: ${backendMessage}`);
+      }
     }
   };
 
@@ -267,6 +294,9 @@ const RulesWorkflow = ({ onEditRule }) => {
   const renderCard = (rule, stageKey) => {
     const isStageExpanded = expandedColumns[stageKey];
     
+    // 🚀 CAZADOR DEL SELLO DE SIMULACIÓN: Busca si el backend marcó la regla como probada
+    const estaSimulada = rule.is_tested || rule.is_simulated || rule.tested_at || rule.last_simulated_at || rule.simulated || rule.is_validated;
+    
     return (
       <div key={`${rule.rule_code}_${rule.version_number}`} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group flex flex-col gap-3 relative overflow-hidden shrink-0">
         <div className={`absolute top-0 left-0 w-full h-1 ${
@@ -294,6 +324,12 @@ const RulesWorkflow = ({ onEditRule }) => {
             <span className="text-[9px] text-slate-500 font-mono font-bold">
               {rule.entity_type}
             </span>
+            {/* 🚀 EL ESCUDO VISUAL DE VALIDACIÓN APARECE AQUÍ */}
+            {estaSimulada && (
+              <span className="text-[8px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs" title="Esta versión ya pasó por el Simulador Histórico.">
+                <span>🧪</span> Validada
+              </span>
+            )}
           </div>
         </div>
 
@@ -312,13 +348,22 @@ const RulesWorkflow = ({ onEditRule }) => {
           
           <div className="flex gap-2">
             {stageKey === 'TESTING' && (
-              <button 
-                onClick={() => handleOpenSimulate(rule)} 
-                className="text-[10px] font-bold text-amber-600 hover:text-white hover:bg-amber-500 bg-amber-500/10 px-2 py-1.5 rounded-lg transition-colors border border-amber-500/20 truncate"
-                title="Ejecutar Simulación en Backtesting"
-              >
-                🧪 Simular
-              </button>
+              <>
+                <button 
+                  onClick={() => handleRequestApproval(rule)}
+                  className="text-[10px] font-bold text-orange-600 hover:text-white hover:bg-orange-500 bg-orange-500/10 px-2 py-1.5 rounded-lg transition-colors border border-orange-500/20 truncate"
+                  title="Solicitar Pase a Producción"
+                >
+                  ⏳ Aprobar
+                </button>
+                <button 
+                  onClick={() => handleOpenSimulate(rule)} 
+                  className="text-[10px] font-bold text-amber-600 hover:text-white hover:bg-amber-500 bg-amber-500/10 px-2 py-1.5 rounded-lg transition-colors border border-amber-500/20 truncate"
+                  title="Ejecutar Simulación en Backtesting"
+                >
+                  🧪 Simular
+                </button>
+              </>
             )}
             
             <button 
@@ -528,7 +573,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                   </div>
                   
                   <div className="flex-1 bg-white flex flex-col overflow-hidden relative">
-                      {/* 🚀 NUEVAS PESTAÑAS (TABS) DEL SIMULADOR */}
                       <div className="flex border-b border-slate-200 shrink-0 bg-slate-50 pt-2 px-2 gap-1">
                           <button 
                             type="button" 
@@ -547,7 +591,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                       </div>
 
                       <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
-                          {/* VISTA 1: RESULTADOS (Render Condicional) */}
                           {simViewMode === 'RESULTS' && (
                               <>
                                   {!simResult && !simLoading && (
@@ -654,7 +697,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                               </>
                           )}
 
-                          {/* VISTA 2: CÓDIGO SQL (Render Condicional) */}
                           {simViewMode === 'SQL' && (
                               <div className="flex-1 flex flex-col bg-[#282c34] rounded-xl overflow-hidden shadow-inner border border-slate-700 animate-fade-in min-h-[300px]">
                                   <div className="bg-slate-800 px-4 py-2.5 border-b border-slate-900 flex justify-between items-center shrink-0">
@@ -684,6 +726,37 @@ const RulesWorkflow = ({ onEditRule }) => {
                   </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* 🚀 MODAL DE RESTRICCIÓN DE NEGOCIO (HTTP 403 / 400) */}
+      {approvalErrorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-orange-200 overflow-hidden transform scale-100 transition-transform">
+            <div className="bg-orange-50 px-5 py-4 border-b border-orange-100 flex items-center gap-3">
+              <span className="text-3xl">🛡️</span>
+              <div>
+                <h3 className="font-black text-orange-800 text-lg">Regla Bloqueada</h3>
+                <p className="text-orange-600/80 text-[10px] font-black uppercase tracking-widest">Restricción de Negocio CI/CD</p>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-600 text-sm leading-relaxed">{approvalErrorModal}</p>
+              
+              <div className="mt-5 bg-slate-50 border border-slate-200 p-3 rounded-xl flex items-start gap-2 shadow-sm">
+                <span className="text-lg">💡</span>
+                <p className="text-xs text-slate-500">Ve a la tarjeta de la regla, presiona <span className="font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/50">🧪 Simular</span> y asegúrate de evaluar el código actual contra datos históricos antes de continuar.</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button 
+                onClick={() => setApprovalErrorModal(null)}
+                className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-2 px-6 rounded-xl shadow-md transition-colors active:scale-95"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
