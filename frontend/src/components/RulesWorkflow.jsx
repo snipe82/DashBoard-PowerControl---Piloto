@@ -7,7 +7,9 @@ const RulesWorkflow = ({ onEditRule }) => {
   const [rules, setRules] = useState([]);
   const [cargando, setCargando] = useState(true);
 
-  // ESTADO PARA EXPANDIR DETALLES POR COLUMNA INDEPENDIENTE
+  // ESTADO PARA EL RELOJ EN TIEMPO REAL (Para el Shadow Mode)
+  const [currentTime, setCurrentTime] = useState(new Date());
+
   const [expandedColumns, setExpandedColumns] = useState({
     DRAFT: false,
     TESTING: false,
@@ -16,34 +18,40 @@ const RulesWorkflow = ({ onEditRule }) => {
     DEPLOYED: false
   });
 
-  // RBAC: Control de accesos para despliegue
   const userSession = JSON.parse(localStorage.getItem('user') || '{}');
   const userRole = (userSession.role || userSession.perfil || 'ANALYST').toUpperCase();
   const isManager = userRole === 'MANAGER' || userRole === 'ADMIN';
 
-  // ESTADOS PARA EL DESPLIEGUE MASIVO
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState('');
 
-  // ESTADOS PARA EL VISOR DE DIFERENCIAS (AUDITORÍA DE PASE A PROD)
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [selectedRuleForDiff, setSelectedRuleForDiff] = useState(null);
   const [prodVersionData, setProdVersionData] = useState(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
 
-  // ESTADOS PARA EL SIMULADOR HISTÓRICO (BACKTESTING)
   const [simModalOpen, setSimModalOpen] = useState(false);
   const [ruleToSimulate, setRuleToSimulate] = useState(null);
   const [simParams, setSimParams] = useState({ start_date: '', end_date: '' });
   const [simLoading, setSimLoading] = useState(false);
   const [simResult, setSimResult] = useState(null);
   const [simError, setSimError] = useState('');
-  
-  // ESTADO PARA LAS PESTAÑAS DEL SIMULADOR
   const [simViewMode, setSimViewMode] = useState('RESULTS'); 
 
-  // ESTADOS PARA EL MANEJO DEL ERROR (CANDADO DE APROBACIÓN)
+  // ESTADOS PARA PROGRAMAR SHADOW MODE
+  const [shadowModalOpen, setShadowModalOpen] = useState(false);
+  const [ruleForShadow, setRuleForShadow] = useState(null);
+  const [shadowParams, setShadowParams] = useState({ start_at: '', end_at: '' });
+  const [shadowLoading, setShadowLoading] = useState(false);
+  const [shadowError, setShadowError] = useState('');
+
+  // ESTADOS PARA EL REPORTE DEL SHADOW MODE
+  const [shadowReportOpen, setShadowReportOpen] = useState(false);
+  const [shadowReportData, setShadowReportData] = useState([]);
+  const [shadowReportLoading, setShadowReportLoading] = useState(false);
+  const [ruleForReport, setRuleForReport] = useState(null);
+
   const [approvalErrorModal, setApprovalErrorModal] = useState(null);
 
   const leftScrollRef = useRef(null);
@@ -67,6 +75,11 @@ const RulesWorkflow = ({ onEditRule }) => {
 
   useEffect(() => {
     fetchRules();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000); 
+    return () => clearInterval(timer);
   }, []);
 
   const workflow = {
@@ -163,7 +176,7 @@ const RulesWorkflow = ({ onEditRule }) => {
     try {
       const payload = {
         rule_code: ruleToSimulate.rule_code, 
-        version_number: ruleToSimulate.version_number, // 🚀 ¡EL ESLABÓN PERDIDO!
+        version_number: ruleToSimulate.version_number,
         query_sql: ruleToSimulate.query_sql,
         start_date: new Date(simParams.start_date).toISOString(),
         end_date: new Date(simParams.end_date).toISOString(),
@@ -172,15 +185,11 @@ const RulesWorkflow = ({ onEditRule }) => {
       
       const res = await api.post('/api/v1/rules/simulate', payload);
       setSimResult(res.data?.data);
-      
-      // 🚀 MAGIA: Recargamos las reglas de fondo para que el tablero se entere del nuevo sello
       fetchRules();
-
     } catch(err) {
       const respData = err.response?.data || {};
       const mainError = respData.error || 'Error al ejecutar la simulación histórica.';
       const detailError = respData.detail ? `\n\n📝 Detalle Técnico:\n${respData.detail}` : '';
-      
       setSimError(mainError + detailError);
     } finally {
       setSimLoading(false);
@@ -199,6 +208,116 @@ const RulesWorkflow = ({ onEditRule }) => {
       
       if (status === 403 || status === 400 || status === 422) {
          setApprovalErrorModal(backendMessage);
+      } else {
+         alert(`Error HTTP ${status || 'Desconocido'}: ${backendMessage}`);
+      }
+    }
+  };
+
+  const handleOpenShadow = (rule) => {
+    setRuleForShadow(rule);
+    const start = new Date();
+    const end = new Date(start.getTime() + 3 * 60 * 60 * 1000); 
+    
+    const toLocalISO = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0,16);
+
+    setShadowParams({
+      start_at: toLocalISO(start),
+      end_at: toLocalISO(end)
+    });
+    setShadowError('');
+    setShadowModalOpen(true);
+  };
+
+  const handleScheduleShadow = async (e) => {
+    e.preventDefault();
+    setShadowLoading(true);
+    setShadowError('');
+    
+    try {
+      const payload = {
+        version_number: ruleForShadow.version_number,
+        shadow_start_at: new Date(shadowParams.start_at).toISOString(),
+        shadow_end_at: new Date(shadowParams.end_at).toISOString()
+      };
+      
+      await api.post(`/api/v1/rules/${ruleForShadow.rule_code}/shadow`, payload);
+      setShadowModalOpen(false);
+      fetchRules();
+    } catch(err) {
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Error al programar el Shadow Mode.';
+      setShadowError(msg);
+    } finally {
+      setShadowLoading(false);
+    }
+  };
+
+  const handleCancelShadow = async (rule) => {
+    if (!window.confirm('¿Estás seguro de cancelar la prueba en sombra actual?')) return;
+    try {
+      await api.delete(`/api/v1/rules/${rule.rule_code}/shadow`);
+      fetchRules();
+    } catch (error) {
+      const msg = error.response?.data?.message || error.response?.data?.error || 'Error al cancelar Shadow Mode.';
+      alert(`Error: ${msg}`);
+    }
+  };
+
+  const handleOpenShadowReport = async (rule) => {
+    setRuleForReport(rule);
+    setShadowReportOpen(true);
+    setShadowReportLoading(true);
+    setShadowReportData([]);
+
+    try {
+      const res = await api.get(`/api/v1/rules/${rule.rule_code}/shadow/alerts`);
+      const data = res.data?.data || res.data || [];
+      setShadowReportData(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error consultando alertas fantasma:", error);
+      setShadowReportData([]);
+    } finally {
+      setShadowReportLoading(false);
+    }
+  };
+
+  // 🚀 LÓGICA DEL VEREDICTO FINAL: Rechazar a DRAFT
+  const handleRejectShadow = async (rule) => {
+    try {
+      setApprovalErrorModal(null);
+      const payload = { 
+        status: 'DRAFT',
+        version_number: rule.version_number 
+      };
+      await api.put(`/api/v1/rules/${rule.rule_code}/status`, payload);
+      setShadowReportOpen(false); // Cerramos el reporte
+      fetchRules();
+    } catch (error) {
+      const status = error.response?.status;
+      const data = error.response?.data || {};
+      const backendMessage = data.message || data.error || data.detail || "Error al rechazar la regla.";
+      alert(`Error HTTP ${status || 'Desconocido'}: ${backendMessage}`);
+    }
+  };
+
+  // 🚀 LÓGICA DEL VEREDICTO FINAL: Aprobar a STAGED
+  const handleMoveToStaged = async (rule) => {
+    try {
+      setApprovalErrorModal(null); 
+      const payload = { 
+        status: 'STAGED',
+        version_number: rule.version_number 
+      };
+      await api.put(`/api/v1/rules/${rule.rule_code}/status`, payload);
+      setShadowReportOpen(false); // Cerramos el reporte si estaba abierto
+      fetchRules();
+    } catch (error) {
+      const status = error.response?.status;
+      const data = error.response?.data || {};
+      const backendMessage = data.message || data.error || data.detail || "Error al mover la regla a STAGED.";
+      
+      if (status === 403 || status === 400 || status === 422) {
+         setApprovalErrorModal(backendMessage); 
       } else {
          alert(`Error HTTP ${status || 'Desconocido'}: ${backendMessage}`);
       }
@@ -293,12 +412,27 @@ const RulesWorkflow = ({ onEditRule }) => {
 
   const renderCard = (rule, stageKey) => {
     const isStageExpanded = expandedColumns[stageKey];
-    
-    // 🚀 CAZADOR DEL SELLO DE SIMULACIÓN: Busca si el backend marcó la regla como probada
     const estaSimulada = rule.is_tested || rule.is_simulated || rule.tested_at || rule.last_simulated_at || rule.simulated || rule.is_validated;
     
+    let isShadowInProgress = false;
+    let isShadowCompleted = false;
+    let shadowProgressText = '';
+
+    if (rule.shadow_end_at) {
+      const endAt = new Date(rule.shadow_end_at);
+      if (currentTime < endAt) {
+        isShadowInProgress = true;
+        const diffMs = endAt - currentTime;
+        const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        shadowProgressText = `Faltan ${diffHrs}h ${diffMins}m`;
+      } else {
+        isShadowCompleted = true;
+      }
+    }
+
     return (
-      <div key={`${rule.rule_code}_${rule.version_number}`} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group flex flex-col gap-3 relative overflow-hidden shrink-0">
+      <div key={`${rule.rule_code}_${rule.version_number}`} className={`bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition-all group flex flex-col gap-3 relative overflow-hidden shrink-0 ${isShadowInProgress && stageKey === 'PENDING_APPROVAL' ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-200'}`}>
         <div className={`absolute top-0 left-0 w-full h-1 ${
           rule.lifecycle_status === 'DRAFT' ? 'bg-slate-300' : 
           rule.lifecycle_status === 'TESTING' ? 'bg-amber-400' : 
@@ -324,7 +458,6 @@ const RulesWorkflow = ({ onEditRule }) => {
             <span className="text-[9px] text-slate-500 font-mono font-bold">
               {rule.entity_type}
             </span>
-            {/* 🚀 EL ESCUDO VISUAL DE VALIDACIÓN APARECE AQUÍ */}
             {estaSimulada && (
               <span className="text-[8px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs" title="Esta versión ya pasó por el Simulador Histórico.">
                 <span>🧪</span> Validada
@@ -332,6 +465,26 @@ const RulesWorkflow = ({ onEditRule }) => {
             )}
           </div>
         </div>
+
+        {stageKey === 'PENDING_APPROVAL' && (
+           <div className="mt-1">
+              {!rule.shadow_end_at && (
+                 <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md border border-slate-200 block text-center w-full shadow-inner">
+                   🌑 Sombra No Programada
+                 </span>
+              )}
+              {isShadowInProgress && (
+                 <span className="text-[9px] font-black bg-amber-50 text-amber-600 px-2 py-1 rounded-md border border-amber-200 block text-center w-full animate-pulse shadow-sm">
+                   🌙 En Sombra ({shadowProgressText})
+                 </span>
+              )}
+              {isShadowCompleted && (
+                 <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md border border-emerald-200 block text-center w-full shadow-sm">
+                   ✅ Sombra Completada
+                 </span>
+              )}
+           </div>
+        )}
 
         {isStageExpanded && (
           <div className="mt-1 pt-2 border-t border-slate-100 animate-fade-in text-left">
@@ -346,7 +499,8 @@ const RulesWorkflow = ({ onEditRule }) => {
         <div className="pt-3 border-t border-gray-100 flex justify-between items-center mt-auto">
           <span className={`w-2 h-2 rounded-full shrink-0 ${rule.is_active ? 'bg-emerald-500' : 'bg-rose-400'}`} title={rule.is_active ? 'Encendida' : 'Apagada'}></span>
           
-          <div className="flex gap-2">
+          {/* 🚀 Le agregamos flex-wrap y justify-end para que los botones se acomoden solos */}
+          <div className="flex gap-1.5 items-center justify-end flex-wrap">
             {stageKey === 'TESTING' && (
               <>
                 <button 
@@ -365,10 +519,54 @@ const RulesWorkflow = ({ onEditRule }) => {
                 </button>
               </>
             )}
+
+            {stageKey === 'PENDING_APPROVAL' && (
+              <>
+                {(!rule.shadow_end_at || isShadowCompleted) && (
+                  <button 
+                    onClick={() => handleOpenShadow(rule)}
+                    className="text-[10px] font-bold text-slate-600 hover:text-white hover:bg-slate-700 bg-slate-100 px-2 py-1.5 rounded-lg transition-colors border border-slate-300 truncate"
+                  >
+                    🌑 {isShadowCompleted ? 'Reprogramar' : 'Sombra'}
+                  </button>
+                )}
+                
+                {rule.shadow_end_at && (
+                  <button 
+                    onClick={() => handleOpenShadowReport(rule)} 
+                    className="text-[10px] font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 px-2 py-1.5 rounded-lg transition-colors border border-blue-200 truncate"
+                    title="Ver reporte de Alertas Fantasma"
+                  >
+                    👀 Reporte
+                  </button>
+                )}
+
+                {isShadowInProgress && (
+                  <button 
+                    onClick={() => handleCancelShadow(rule)} 
+                    className="text-[10px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 bg-rose-50 px-2 py-1.5 rounded-lg transition-colors border border-rose-200 truncate"
+                    title="Abortar prueba en sombra"
+                  >
+                    🛑 Cancelar
+                  </button>
+                )}
+                
+                <button 
+                  onClick={() => handleMoveToStaged(rule)} 
+                  disabled={isShadowInProgress}
+                  className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors border truncate ${isShadowInProgress ? 'text-gray-400 bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' : 'text-emerald-600 hover:text-white hover:bg-emerald-500 bg-emerald-50 border-emerald-200'}`}
+                  title={isShadowInProgress ? 'La Sombra sigue activa' : 'Pasar a Staged'}
+                >
+                  🚀 Staged
+                </button>
+              </>
+            )}
             
+            {/* 🚀 BOTÓN SIEMPRE VISIBLE SIN IMPORTAR LA COLUMNA */}
             <button 
               onClick={() => onEditRule({ ...rule, _fromWorkflow: true })} 
               className="text-[10px] font-bold text-power-purple hover:text-white hover:bg-power-purple bg-power-purple/5 px-2 py-1.5 rounded-lg transition-colors border border-power-purple/20 truncate"
+              title="Abrir formulario y auditar SQL"
             >
               {rule.lifecycle_status === 'DEPLOYED' ? '👁️ Inspeccionar' : '✅ Auditar'}
             </button>
@@ -515,7 +713,8 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
       )}
 
-      {/* 🚀 MODAL DEL SIMULADOR DE BACKTESTING */}
+      {/* MODALES DEL SISTEMA */}
+      
       {simModalOpen && ruleToSimulate && (
         <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[250] backdrop-blur-sm p-4 animate-fade-in">
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden">
@@ -657,7 +856,8 @@ const RulesWorkflow = ({ onEditRule }) => {
                                                               </tr>
                                                           ) : (
                                                               simResult.details.map((dt, i) => {
-                                                                  const rawDate = dt.event_time_utc || dt.event_time || dt.created_at || dt.fecha;
+                                                                  // Código actualizado para tu modal en RulesWorkflow.jsx
+                                                                  const rawDate = dt.event_time_utc || dt.event_time || dt.created_at || dt.fecha || dt.triggered_at;
                                                                   const displayDate = rawDate ? new Date(rawDate).toLocaleString() : '—';
                                                                   
                                                                   const rawImporte = dt.importe || dt.monto || dt.amount;
@@ -729,6 +929,131 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
       )}
 
+      {/* 🚀 MODAL DE REPORTE DE ALERTAS FANTASMA (EL VEREDICTO) */}
+      {shadowReportOpen && ruleForReport && (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[250] backdrop-blur-sm p-4 animate-fade-in">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-blue-200">
+              
+              <div className="bg-blue-900 p-4 flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-3">
+                   <span className="text-3xl">👀</span>
+                   <div>
+                     <h2 className="text-lg font-black text-white leading-tight">Reporte de Alertas Fantasma</h2>
+                     <p className="text-[10px] text-blue-200 font-mono mt-0.5">
+                       Monitoreo en vivo de <span className="font-bold text-white">{ruleForReport.rule_code}</span> durante su periodo Shadow.
+                     </p>
+                   </div>
+                 </div>
+                 <button onClick={() => setShadowReportOpen(false)} className="text-blue-200 hover:text-white bg-blue-800 hover:bg-rose-600 w-8 h-8 rounded-full flex items-center justify-center transition-colors text-sm font-bold">✕</button>
+              </div>
+
+              <div className="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center shrink-0">
+                  <div>
+                      <p className="text-[10px] font-black uppercase text-blue-800 tracking-widest mb-0.5">Ventana de Observación</p>
+                      <p className="text-xs font-medium text-slate-600 font-mono">
+                          Desde: {new Date(ruleForReport.shadow_start_at).toLocaleString()} <br/>
+                          Hasta: {new Date(ruleForReport.shadow_end_at).toLocaleString()}
+                      </p>
+                  </div>
+                  <div className="text-right">
+                      <p className="text-[10px] font-black uppercase text-blue-800 tracking-widest mb-0.5">Total de Impactos</p>
+                      <p className="text-2xl font-black text-blue-600 leading-none">{shadowReportData.length}</p>
+                  </div>
+              </div>
+
+              <div className="flex-1 bg-white overflow-hidden p-4 flex flex-col">
+                  {shadowReportLoading ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center">
+                          <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                          <h3 className="text-sm font-black text-slate-700">Descargando bitácora sombra...</h3>
+                          <p className="text-xs text-slate-500 mt-2">Consultando los logs de la base de datos.</p>
+                      </div>
+                  ) : shadowReportData.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center px-4">
+                          <span className="text-6xl mb-4 opacity-30">👻</span>
+                          <h3 className="text-xl font-black text-slate-700">Silencio en la radio</h3>
+                          <p className="text-xs text-slate-500 max-w-sm mt-2 leading-relaxed">
+                              La regla ha estado corriendo en la sombra, pero no ha generado ninguna alerta fantasma en este periodo.
+                          </p>
+                      </div>
+                  ) : (
+                      <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
+                          <table className="w-full text-left">
+                              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 text-[9px] uppercase tracking-widest text-slate-500 font-bold z-10 shadow-sm">
+                                  <tr>
+                                      <th className="px-4 py-2.5">Fecha/Hora Captura</th>
+                                      <th className="px-4 py-2.5">Identidad del Cliente</th>
+                                      <th className="px-4 py-2.5">Detalle de Operación</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-[11px]">
+                                  {shadowReportData.map((dt, i) => {
+                                      const rawDate = dt.event_time_utc || dt.event_time || dt.created_at || dt.fecha || dt.triggered_at;
+                                      const displayDate = rawDate ? new Date(rawDate).toLocaleString() : '—';
+                                      
+                                      const rawImporte = dt.importe || dt.monto || dt.amount;
+                                      const displayImporte = typeof rawImporte === 'object' ? (rawImporte?.value || rawImporte?.amount || '0.00') : (rawImporte || '0.00');
+                                      
+                                      const displayComercio = typeof dt.comercio === 'object' ? JSON.stringify(dt.comercio) : dt.comercio;
+                                      const displayNombre = typeof dt.customer_name === 'object' ? JSON.stringify(dt.customer_name) : dt.customer_name;
+
+                                      return (
+                                        <tr key={i} className="hover:bg-blue-50/50 transition-colors">
+                                            <td className="px-4 py-3 font-mono text-slate-600 font-medium whitespace-nowrap">{displayDate}</td>
+                                            <td className="px-4 py-3">
+                                                <p className="font-black text-slate-700 uppercase tracking-tight">{displayNombre || 'NO REGISTRADO'}</p>
+                                                <p className="text-[9px] text-slate-500 font-mono mt-0.5">DNI: {dt.document_number || '—'} | 📱 {dt.phone_number || '—'}</p>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <p className="font-bold text-blue-600 font-mono w-max">{dt.application_id || dt.transaction_id || 'N/A'}</p>
+                                                <p className="text-[10px] text-slate-500 mt-0.5 font-medium flex items-center gap-1.5 flex-wrap">
+                                                    <span className="font-black text-emerald-600">S/ {parseFloat(displayImporte).toFixed(2)}</span> 
+                                                    {displayComercio && <span className="truncate max-w-[120px]" title={displayComercio}>• {displayComercio}</span>}
+                                                </p>
+                                            </td>
+                                        </tr>
+                                      );
+                                  })}
+                              </tbody>
+                          </table>
+                      </div>
+                  )}
+              </div>
+
+              {/* 🚀 ZONA DE VEREDICTO (Solo activa si la fecha ya pasó) */}
+              <div className="bg-slate-50 p-4 border-t border-slate-200 shrink-0 flex flex-col sm:flex-row justify-between items-center gap-4">
+                 {currentTime < new Date(ruleForReport.shadow_end_at) ? (
+                    <div className="flex-1 flex items-center gap-2 text-amber-600 bg-amber-50 px-4 py-2.5 rounded-lg border border-amber-200 w-full">
+                       <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></div>
+                       <p className="text-xs font-bold">La prueba Sombra sigue en curso. Podrás emitir un veredicto cuando finalice.</p>
+                    </div>
+                 ) : (
+                    <>
+                       <div className="text-xs text-slate-600 font-medium">
+                          La prueba ha concluido. <span className="font-black">¿Cuál es tu veredicto para esta regla?</span>
+                       </div>
+                       <div className="flex items-center gap-3 w-full sm:w-auto">
+                          <button 
+                            onClick={() => handleRejectShadow(ruleForReport)}
+                            className="flex-1 sm:flex-none text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-600 hover:text-white px-5 py-2.5 rounded-xl border border-rose-200 transition-colors shadow-sm active:scale-95"
+                          >
+                            👎 Rechazar (A Borrador)
+                          </button>
+                          <button 
+                            onClick={() => handleMoveToStaged(ruleForReport)}
+                            className="flex-1 sm:flex-none text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            🚀 Aprobar (Pasar a STAGED)
+                          </button>
+                       </div>
+                    </>
+                 )}
+              </div>
+
+           </div>
+        </div>
+      )}
+
       {/* 🚀 MODAL DE RESTRICCIÓN DE NEGOCIO (HTTP 403 / 400) */}
       {approvalErrorModal && (
         <div className="fixed inset-0 bg-slate-900/60 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
@@ -745,7 +1070,7 @@ const RulesWorkflow = ({ onEditRule }) => {
               
               <div className="mt-5 bg-slate-50 border border-slate-200 p-3 rounded-xl flex items-start gap-2 shadow-sm">
                 <span className="text-lg">💡</span>
-                <p className="text-xs text-slate-500">Ve a la tarjeta de la regla, presiona <span className="font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/50">🧪 Simular</span> y asegúrate de evaluar el código actual contra datos históricos antes de continuar.</p>
+                <p className="text-xs text-slate-500">Sigue las instrucciones del mensaje para desbloquear esta regla y continuar con su ciclo life en el flujo de publicación.</p>
               </div>
             </div>
             <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
@@ -756,6 +1081,75 @@ const RulesWorkflow = ({ onEditRule }) => {
                 Entendido
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 MODAL: PROGRAMAR SHADOW MODE */}
+      {shadowModalOpen && ruleForShadow && (
+        <div className="fixed inset-0 bg-slate-900/80 z-[250] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+            <div className="bg-slate-900 px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+              <span className="text-2xl">🌑</span>
+              <div>
+                <h3 className="font-black text-white text-lg leading-tight">Shadow Mode (Sombra)</h3>
+                <p className="text-slate-400 text-[10px] font-mono mt-0.5">Programando: {ruleForShadow.rule_code}</p>
+              </div>
+            </div>
+            
+            <form onSubmit={handleScheduleShadow} className="p-5">
+              <p className="text-xs text-slate-600 mb-5 leading-relaxed">
+                Define el periodo en el que esta regla evaluará el tráfico en vivo (Champion-Challenger). Las alertas generadas no afectarán a los clientes. Mínimo 3 horas, máximo 168 horas (1 semana).
+              </p>
+
+              <div className="space-y-4">
+                 <div>
+                   <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">Fecha/Hora de Inicio</label>
+                   <input 
+                     type="datetime-local" 
+                     value={shadowParams.start_at} 
+                     onChange={e => setShadowParams({...shadowParams, start_at: e.target.value})} 
+                     required 
+                     className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 font-medium" 
+                   />
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">Fecha/Hora de Fin</label>
+                   <input 
+                     type="datetime-local" 
+                     value={shadowParams.end_at} 
+                     onChange={e => setShadowParams({...shadowParams, end_at: e.target.value})} 
+                     required 
+                     className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 font-medium" 
+                   />
+                 </div>
+              </div>
+
+              {shadowError && (
+                <div className="mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2.5 rounded-lg text-[11px] font-bold flex items-start gap-2 shadow-sm">
+                  <span className="text-sm mt-0.5">🛑</span> 
+                  <p>{shadowError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-6 mt-4 border-t border-slate-100">
+                <button 
+                  type="button" 
+                  onClick={() => setShadowModalOpen(false)} 
+                  disabled={shadowLoading}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={shadowLoading} 
+                  className="flex-[2] py-2.5 rounded-xl text-xs font-black bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-70 flex justify-center items-center gap-2 shadow-md transition-all active:scale-95"
+                >
+                  {shadowLoading ? 'Programando...' : 'Guardar Sombra'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
