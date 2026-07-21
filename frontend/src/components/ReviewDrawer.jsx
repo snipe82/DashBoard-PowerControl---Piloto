@@ -23,7 +23,6 @@ const RESPUESTAS_RAPIDAS = [
   "EN INVESTIGACIÓN"
 ];
 
-// 🚀 ESCUDOS ANTI-CRASH (Evita que objetos del backend rompan React)
 const safeString = (val, fallback = '—') => {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'object') return JSON.stringify(val);
@@ -278,7 +277,6 @@ const ReviewDrawer = ({
 
     let isDrawerActive = true; 
 
-    // 🚀 LÓGICA DE EXTRACCIÓN SEGURA DE MENSAJES DE ERROR PARA EVITAR CRASHES
     const safeErrorMsg = (data, defaultMsg) => {
         let m = data?.error || data?.message || defaultMsg;
         if (typeof m === 'object') return JSON.stringify(m);
@@ -412,7 +410,6 @@ const ReviewDrawer = ({
     if (!alertaActiva) return alert("Por favor, selecciona un evento del historial.");
     if (cargandoPayload) return alert("Por favor, espera a que cargue la información del evento seleccionado.");
     
-    // 🚀 LÓGICA INTELIGENTE DE EXTRACCIÓN DE ID: Busca en Payload, luego en Alerta, luego en Contexto
     let idParaRuta = payloadData?.customerid || payloadData?.customerId || payloadData?.customer_id;
     if (!idParaRuta) idParaRuta = payloadData?.document_number || payloadData?.dni || alertaActiva.dni || alertaActiva.document_number || alertaActiva.customer_id || alertaActiva.codigo_entidad;
     if (!idParaRuta && info?.id_value) idParaRuta = info.id_value;
@@ -614,9 +611,33 @@ const ReviewDrawer = ({
                     <div className="max-h-80 overflow-y-auto p-3 space-y-3">
                       {alertas.map((al, idx) => {
                         const estaSeleccionado = selectedAlertId === al.alert_id;
+                        
+                        // Radar de teléfonos
                         const celularDelPayload = payloadData?.telephonenumber || payloadData?.phone || payloadData?.customer?.phone || payloadData?.mobile;
                         const phoneFinal = al.celular || al.telefono || al.phone || al.mobile || rawTelefonoEncontrado || celularDelPayload;
                         const textCelular = phoneFinal ? phoneFinal : (estaSeleccionado && cargandoPayload ? '⏳...' : 'No reg.');
+                        
+                        // 🚀 NUEVO RADAR DE CUOTAS (Ampliado y forzado a mostrar solo el número + ' meses')
+                        const cuotasEncontradas = al.numberinstallments || al.cuotas || al.installments || al.plazo || al.term || al.numero_cuotas;
+                        const cuotasPayload = payloadData?.numberinstallments ||
+                                              payloadData?.cuotas || 
+                                              payloadData?.installments || 
+                                              payloadData?.plazo || 
+                                              payloadData?.term || 
+                                              payloadData?.numero_cuotas || 
+                                              payloadData?.loan?.installments || 
+                                              payloadData?.credit?.installments ||
+                                              payloadData?.application?.installments ||
+                                              payloadData?.application?.term ||
+                                              payloadData?.transaction?.installments ||
+                                              payloadData?.financing?.installments;
+                                              
+                        const finalCuotas = cuotasEncontradas || (estaSeleccionado ? cuotasPayload : null);
+                        
+                        // Extraemos solo los dígitos del valor encontrado
+                        const finalCuotasNumero = finalCuotas ? String(finalCuotas).replace(/\D/g, '') : null;
+                        const textCuotas = finalCuotasNumero ? `${finalCuotasNumero} meses` : (estaSeleccionado && cargandoPayload ? '⏳...' : 'No reg.');
+
                         const nombreComercio = al.tienda || al.comercio || al.merchant || al.merchant_name || '—';
 
                         return (
@@ -637,10 +658,22 @@ const ReviewDrawer = ({
                                  <span className="block text-[9px] md:text-[10px] text-slate-400 truncate max-w-[90px] md:max-w-[120px]" title={safeString(al.event_type)}>{safeString(al.event_type)}</span>
                                </div>
                              </div>
+                             
                              <div className="mb-2 bg-slate-50/80 rounded-lg p-2 md:p-2.5 border border-slate-100 text-[10px] md:text-[11px] space-y-1">
-                               <div className="flex justify-between items-center"><span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Comercio:</span><span className="font-medium text-gray-700 truncate text-right">{safeString(nombreComercio)}</span></div>
-                               <div className="flex justify-between items-center"><span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Cliente:</span><span className="font-medium text-gray-700 truncate text-right">{safeString(al.cliente)}</span></div>
+                               <div className="flex justify-between items-center">
+                                 <span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Comercio:</span>
+                                 <span className="font-medium text-gray-700 truncate text-right">{safeString(nombreComercio)}</span>
+                               </div>
+                               <div className="flex justify-between items-center">
+                                 <span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Cliente:</span>
+                                 <span className="font-medium text-gray-700 truncate text-right">{safeString(al.cliente)}</span>
+                               </div>
+                               <div className="flex justify-between items-center">
+                                 <span className="font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-2">Cuotas/Plazo:</span>
+                                 <span className="font-medium text-gray-700 truncate text-right">{safeString(textCuotas)}</span>
+                               </div>
                              </div>
+                             
                              <div className="flex items-center justify-between text-[10px] md:text-[11px] pt-1">
                                 <div className="flex items-center gap-1.5"><span className="font-bold text-gray-400 uppercase tracking-wider">DNI:</span><span className="font-mono font-bold text-gray-600">{safeString(al.dni)}</span>{al.dni && <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(safeString(al.dni,'')); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 flex items-center justify-center shadow-xs">📋</button>}</div>
                                 <div className="flex items-center gap-1.5"><span className="font-bold text-gray-400 uppercase tracking-wider">Telf:</span><span className="font-semibold text-gray-600">{safeString(textCelular)}</span>{phoneFinal && <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(safeString(phoneFinal,'')); }} className="p-0.5 bg-white hover:bg-slate-200 text-slate-500 rounded border border-slate-200 flex items-center justify-center shadow-xs">📋</button>}</div>

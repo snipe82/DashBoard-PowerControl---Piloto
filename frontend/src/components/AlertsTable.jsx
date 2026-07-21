@@ -64,7 +64,8 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual, subTabFraud }) => {
             <li key={i} className="bg-slate-800 p-2.5 md:p-3 rounded-lg border border-slate-700/50 flex flex-col">
               <div className="flex justify-between items-center mb-1.5">
                 <span className="font-mono text-[10px] md:text-sm text-red-200 bg-red-900/40 px-2 py-0.5 rounded border border-red-400/20 truncate max-w-[120px]" title={al.codigoregla}>{al.codigoregla}</span>
-                <span className="font-bold text-emerald-400 text-xs md:text-sm">S/ {parseFloat(al.monto || 0).toFixed(2)}</span>
+                {/* 🚀 CORRECCIÓN: Extracción dinámica del importe para el tooltip */}
+                <span className="font-bold text-emerald-400 text-xs md:text-sm">S/ {parseFloat(al.importe || al.monto || al.amount || 0).toFixed(2)}</span>
               </div>
               <p className="text-xs md:text-sm text-slate-50 font-medium mb-1.5 whitespace-normal">{al.regla || 'Alerta de riesgo'}</p>
               <div className="flex justify-between items-center text-[10px] text-slate-200"><span>{al.event_type || 'Transacción'}</span><span>{new Date(al.fecha).toLocaleString()}</span></div>
@@ -157,19 +158,25 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           const agrupado = {};
           arrData.forEach(item => {
             const id = resolveEntityId(item);
+            
+            // 🚀 CORRECCIÓN: Leemos primero los campos pre-calculados del backend
+            const valorOperacion = parseFloat(item.monto_total_riesgo || item.importe || item.monto || item.amount || 0);
+            const cantidadAlertas = parseInt(item.total_alertas || 1, 10);
+
             if (!agrupado[id]) {
               agrupado[id] = { 
                 ...item, 
                 id_agrupacion: id, 
-                total_alertas: 1, 
-                monto_total_riesgo: parseFloat(item.monto || 0),
+                total_alertas: cantidadAlertas, // 🚀 Usamos el total real
+                monto_total_riesgo: valorOperacion, // 🚀 Usamos el monto real
                 locked_by: item.locked_by || null,
                 locked_at: item.locked_at || null,
                 fraud_type: item.fraud_type || null
               };
             } else {
-              agrupado[id].total_alertas += 1;
-              agrupado[id].monto_total_riesgo += parseFloat(item.monto || 0);
+              // Si por algún motivo llegan varios registros del mismo ID, los sumamos correctamente
+              agrupado[id].total_alertas += cantidadAlertas;
+              agrupado[id].monto_total_riesgo += valorOperacion;
               
               if (item.fraud_type) agrupado[id].fraud_type = item.fraud_type; 
 

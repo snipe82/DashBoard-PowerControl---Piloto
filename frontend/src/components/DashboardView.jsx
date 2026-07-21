@@ -146,6 +146,15 @@ const DashboardView = () => {
                 <h3 className="font-black text-gray-400 text-[10px] uppercase tracking-widest">Distribución: Gestión Activa</h3>
                 <button onClick={() => toggleChartTooltip('activa')} className="info-icon-trigger md:ml-2 text-power-purple bg-power-purple/10 rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-bold active:scale-95 transition-transform">i</button>
               </div>
+              
+              {/* 🚀 TOOLTIP: Gestión Activa */}
+              {activeChartTooltip === 'activa' && (
+                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-64 bg-slate-900 text-white text-[10px] rounded-lg p-3 shadow-xl border border-slate-700 leading-snug animate-fade-in">
+                  Muestra el top 5 de reglas que están generando alertas actualmente (en estado ABIERTA o PENDIENTE).
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-b-slate-900"></div>
+                </div>
+              )}
+
               <div className="space-y-4 mb-6">
                 {stats.top_rules_activas.top.length === 0 ? <p className="text-[10px] text-center uppercase text-gray-400">Sin alertas activas</p> : stats.top_rules_activas.top.map((r, idx) => renderRow(r, idx, 0))}
               </div>
@@ -160,6 +169,15 @@ const DashboardView = () => {
                 <h3 className="font-black text-gray-400 text-[10px] uppercase tracking-widest">Distribución: Riesgo Crítico</h3>
                 <button onClick={() => toggleChartTooltip('riesgo')} className="info-icon-trigger md:ml-2 text-rose-500 bg-rose-50 rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-bold active:scale-95 transition-transform border border-rose-100">i</button>
               </div>
+
+              {/* 🚀 TOOLTIP: Riesgo Crítico */}
+              {activeChartTooltip === 'riesgo' && (
+                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-64 bg-slate-900 text-white text-[10px] rounded-lg p-3 shadow-xl border border-slate-700 leading-snug animate-fade-in">
+                  Muestra el top 5 de reglas de los casos confirmados como FRAUDE. Ayuda a identificar vectores de ataque efectivos.
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-b-slate-900"></div>
+                </div>
+              )}
+
               <div className="space-y-4 mb-6">
                 {stats.top_rules_riesgo.top.length === 0 ? <p className="text-[10px] text-center uppercase text-gray-400">Sin riesgo crítico</p> : stats.top_rules_riesgo.top.map((r, idx) => renderRow(r, idx, 4))}
               </div>
@@ -175,6 +193,15 @@ const DashboardView = () => {
                   <h3 className="font-black text-gray-400 text-[10px] uppercase tracking-widest">Distribución Histórica</h3>
                   <button onClick={() => toggleChartTooltip('global')} className="info-icon-trigger ml-2 text-emerald-600 bg-emerald-50 rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-bold border border-emerald-100 active:scale-95 transition-transform">i</button>
                 </div>
+                
+                {/* 🚀 TOOLTIP: Distribución Histórica */}
+                {activeChartTooltip === 'global' && (
+                  <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-64 bg-slate-900 text-white text-[10px] rounded-lg p-3 shadow-xl border border-slate-700 leading-snug animate-fade-in">
+                    Muestra el top 10 de reglas activadas históricamente, independientemente de su estado final.
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-b-slate-900"></div>
+                  </div>
+                )}
+
                 <div className="flex bg-gray-100 rounded-md p-0.5 border border-gray-200 shadow-inner w-fit">
                   <button onClick={() => setPeriodoHistorico('actual')} className={`text-[9px] font-bold px-2 py-1 rounded transition-colors ${periodoHistorico === 'actual' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Actual</button>
                   <button onClick={() => setPeriodoHistorico('anterior')} className={`text-[9px] font-bold px-2 py-1 rounded transition-colors ${periodoHistorico === 'anterior' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Anterior</button>
