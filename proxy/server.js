@@ -547,7 +547,90 @@ app.post('/api/v1/rules/ai/modify', async (req, res) => {
 });
 
 // ==========================================
-// 🌐 9. MANEJO DE RUTAS ESTÁTICAS / WILDCARD
+// 📋 10. MÓDULO DE LISTAS (CATÁLOGO DINÁMICO)
+// ==========================================
+
+// 10.1 Gestión del Catálogo
+app.get('/api/lists/catalog', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/catalog`, { headers: getHeaders(req) });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+app.post('/api/lists/catalog', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/catalog`, { 
+            method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+app.delete('/api/lists/catalog/:list_id', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/catalog/${req.params.list_id}`, { 
+            method: 'DELETE', headers: getHeaders(req) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+// 10.2 Gestión de Registros y Valores
+app.post('/api/lists/:list_id/manual', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/manual`, { 
+            method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+app.post('/api/lists/:list_id/bulk', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/bulk`, { 
+            method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+// 🚀 NUEVA RUTA PROXY: Listado Paginado de Registros (Escudada contra colisiones)
+app.get('/api/lists/:list_id', async (req, res) => {
+    try {
+        if(req.params.list_id.toLowerCase() === 'catalog') return res.status(400).json({error: "Ruta reservada"});
+        
+        const { page, limit, search } = req.query;
+        let url = `http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}?page=${page || 1}&limit=${limit || 10}`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        
+        const response = await fetch(url, { headers: getHeaders(req) });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+app.get('/api/lists/:list_id/:value', async (req, res) => {
+    try {
+        const safeValue = encodeURIComponent(req.params.value);
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/${safeValue}`, { 
+            headers: getHeaders(req) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+app.delete('/api/lists/:list_id/:value', async (req, res) => {
+    try {
+        const safeValue = encodeURIComponent(req.params.value);
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/${safeValue}`, { 
+            method: 'DELETE', headers: getHeaders(req) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+// ==========================================
+// 🌐 11. MANEJO DE RUTAS ESTÁTICAS / WILDCARD
 // ==========================================
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'views', 'index.html')));
 

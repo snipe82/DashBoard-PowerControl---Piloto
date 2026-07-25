@@ -7,11 +7,13 @@ import ReviewDrawer from './components/ReviewDrawer';
 import LoginView from './components/LoginView';
 import UsersList from './components/UsersList'; 
 import UserCreate from './components/UserCreate'; 
-
 import RulesList from './components/RulesList';
 import RuleForm from './components/RuleForm';
 import EventsSearch from './components/EventsSearch';
 import RulesWorkflow from './components/RulesWorkflow';
+
+// Importamos el nuevo componente
+import ListsMaintenance from './components/ListsMaintenance';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('accessToken'));
@@ -29,7 +31,6 @@ function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const [reglaEnEdicion, setReglaEnEdicion] = useState(null);
-  
   const [quickEventsOpen, setQuickEventsOpen] = useState(false);
 
   const abrirRevision = useCallback((alertId, clientCtx, entidadesDeLaTabla) => {
@@ -56,6 +57,8 @@ function App() {
       setVistaActual('RULES_LIST');
     } else if (nuevoModulo === 'EVENTOS') {
       setVistaActual('EVENTS_SEARCH'); 
+    } else if (nuevoModulo === 'CONFIGURACION') {
+      setVistaActual('LIST_MANAGER');
     } else {
       setVistaActual('USERS_LIST');
     }
@@ -92,7 +95,6 @@ function App() {
     }
   };
 
-  // 🚀 CONTROLADOR DE TRÁFICO INTELIGENTE
   const handleReturnFromForm = () => {
     if (reglaEnEdicion?._fromWorkflow) {
       setVistaActual('RULES_WORKFLOW');
@@ -142,13 +144,17 @@ function App() {
             ) : vistaActual === 'RULES_WORKFLOW' ? (
               <RulesWorkflow onEditRule={(rule) => { setReglaEnEdicion(rule); setVistaActual('RULE_FORM'); }} />
             ) : (
-              // 🚀 APLICAMOS EL CONTROLADOR TANTO AL CANCELAR COMO AL GUARDAR CON ÉXITO
               <RuleForm ruleToEdit={reglaEnEdicion} onCancel={handleReturnFromForm} onSuccess={handleReturnFromForm} />
             )
           )}
 
           {moduloActual === 'EVENTOS' && (
              <EventsSearch />
+          )}
+
+          {/* Renderizado del nuevo módulo de configuración */}
+          {moduloActual === 'CONFIGURACION' && (
+             vistaActual === 'LIST_MANAGER' && <ListsMaintenance />
           )}
 
           {moduloActual === 'SEGURIDAD' && (

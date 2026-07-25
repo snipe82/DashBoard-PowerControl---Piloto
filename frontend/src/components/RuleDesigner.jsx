@@ -68,7 +68,6 @@ const parseSqlString = (sqlInput, isFromAI = false) => {
     }
   }
   
-  // 🚀 MEJORA: Poda profunda y agresiva del bloque 'params' para evitar duplicados
   let lowerSqlCheck = cleanSql.toLowerCase();
   if (lowerSqlCheck.startsWith('with params as')) {
     const firstParen = cleanSql.indexOf('(');
@@ -80,10 +79,8 @@ const parseSqlString = (sqlInput, isFromAI = false) => {
         if (cleanSql[i] === ')') depth--;
         i++;
       }
-      // Cortamos el WITH params AS (...)
       cleanSql = cleanSql.substring(i).trim();
       
-      // Si después del bloque params hay una coma (ej: `, otra_tabla AS`), quitamos la coma y restauramos el WITH
       if (cleanSql.startsWith(',')) {
         cleanSql = 'WITH ' + cleanSql.substring(1).trim();
       }
@@ -195,7 +192,11 @@ const parseSqlString = (sqlInput, isFromAI = false) => {
 };
 
 const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, ruleDescription, onApplySql, onClose }) => {
-  const [dictionary, setDictionary] = useState([]);
+  // 🚀 Nuevos estados estructurados para el Diccionario 
+  const [dictionaryTables, setDictionaryTables] = useState([PARAMS_STATIC_TABLE]);
+  const [dictionaryLists, setDictionaryLists] = useState([]);
+  const [dictTab, setDictTab] = useState('TABLES'); // 'TABLES' o 'LISTS'
+  
   const [openTable, setOpenTable] = useState(null);
   const [copiedItem, setCopiedItem] = useState(null);
   
@@ -235,14 +236,24 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
   useEffect(() => {
     api.get('/api/v1/rules/dictionary')
       .then(res => {
-        let rawData = res.data?.data || res.data || [];
-        if (!Array.isArray(rawData)) rawData = [];
+        const payloadData = res.data?.data || res.data || {};
         
-        setDictionary([PARAMS_STATIC_TABLE, ...rawData]);
+        // 🚀 Migración de payload para soportar el cambio estructural del backend
+        if (Array.isArray(payloadData)) {
+           // Compatibilidad retroactiva por si el backend revierte
+           setDictionaryTables([PARAMS_STATIC_TABLE, ...payloadData]);
+           setDictionaryLists([]);
+        } else {
+           const tables = Array.isArray(payloadData.tables) ? payloadData.tables : [];
+           const lists = Array.isArray(payloadData.lists) ? payloadData.lists : [];
+           setDictionaryTables([PARAMS_STATIC_TABLE, ...tables]);
+           setDictionaryLists(lists);
+        }
       })
       .catch(err => {
         console.error("Error cargando diccionario:", err);
-        setDictionary([PARAMS_STATIC_TABLE]);
+        setDictionaryTables([PARAMS_STATIC_TABLE]);
+        setDictionaryLists([]);
       });
   }, []);
 
@@ -411,7 +422,8 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
     ];
     let options = basicKeywords.map(kw => ({ label: kw, type: 'keyword', boost: -1 }));
 
-    dictionary.forEach(table => {
+    // 🚀 Ajuste: Ahora leemos desde dictionaryTables
+    dictionaryTables.forEach(table => {
       if (table.table_name) {
         options.push({ label: table.table_name, type: 'class', detail: table.table_name === 'params' ? 'Motor' : 'BD' });
         if (table.columns) table.columns.forEach(col => options.push({ label: col.column_name, type: 'property', detail: col.data_type }));
@@ -427,7 +439,7 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
       if (word.from === word.to && !context.explicit) return null;
       return { from: word.from, options: options, validFor: /^\w*$/ };
     };
-  }, [dictionary, ctes]);
+  }, [dictionaryTables, ctes]);
 
   const handleCopy = (e, text) => {
     e.stopPropagation(); 
@@ -642,14 +654,12 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
                     </button>
                   </div>
 
-                  {/* ZONA DE ERROR CONTROLADO */}
                   {aiError && (
                     <div className="mt-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2.5 rounded-lg text-xs font-bold animate-fade-in flex items-center gap-2 shadow-sm">
                       <span className="text-base">🛑</span> {aiError}
                     </div>
                   )}
 
-                  {/* 🚀 ZONA DE ÉXITO Y REVERSIÓN (UNDO) */}
                   {aiSuccess && (
                     <div className="mt-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-4 py-2.5 rounded-lg text-xs font-bold animate-fade-in flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
                       <div className="flex items-center gap-2">
@@ -881,14 +891,20 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
           )}
         </div>
 
-        {/* DICCIONARIO DE DATOS */}
+        {/* 📖 DICCIONARIO DE DATOS (NUEVO PANEL) */}
         <div className="w-full md:w-80 h-[35vh] md:h-auto bg-slate-950 overflow-y-auto shrink-0 flex flex-col z-10 relative select-none">
           <div className="p-2 md:p-4 border-b border-slate-800 bg-slate-900 shrink-0 sticky top-0 z-10 shadow-md">
-            <h3 className="text-xs md:text-sm font-black text-slate-200 uppercase tracking-widest flex items-center gap-2">📖 Diccionario BD</h3>
-            <p className="text-[9px] md:text-[10px] text-slate-500 mt-0.5 font-medium">Toca o arrastra hacia el editor</p>
+            <h3 className="text-xs md:text-sm font-black text-slate-200 uppercase tracking-widest flex items-center gap-2">📖 Diccionario</h3>
+            <div className="flex bg-slate-800 mt-2 rounded-lg p-1 border border-slate-700">
+                <button onClick={() => setDictTab('TABLES')} className={`flex-1 text-[10px] font-bold py-1.5 rounded-md transition-colors ${dictTab === 'TABLES' ? 'bg-power-purple text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>TABLAS BD</button>
+                <button onClick={() => setDictTab('LISTS')} className={`flex-1 text-[10px] font-bold py-1.5 rounded-md transition-colors ${dictTab === 'LISTS' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>LISTAS EAV</button>
+            </div>
+            <p className="text-[9px] text-slate-500 mt-2 font-medium">Arrastra tarjetas hacia el editor o usa Copiar</p>
           </div>
+          
           <div className="p-2 space-y-2">
-            {dictionary.map((table, idx) => {
+            {/* VISTA TABLAS FÍSICAS */}
+            {dictTab === 'TABLES' && dictionaryTables.map((table, idx) => {
               const isOpen = openTable === table.table_name;
               return (
                 <div key={idx} className={`border rounded-lg overflow-hidden shadow-sm transition-colors ${table.table_name === 'params' ? 'bg-power-purple/10 border-power-purple/30' : 'bg-slate-900 border-slate-800'}`}>
@@ -909,8 +925,6 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
                           <div className="min-w-0 flex-1">
                             <p className="text-[10px] font-bold text-slate-300 font-mono truncate">{col.column_name}</p>
                             <p className={`text-[8px] font-mono font-bold mt-0.5 ${table.table_name === 'params' ? 'text-power-purple' : 'text-emerald-500'}`}>{col.data_type}</p>
-                            
-                            {/* 🚀 Renderizamos el comentario de la columna */}
                             {col.description && (
                               <p className="text-[9px] text-slate-400/80 italic mt-1.5 leading-snug break-words pr-2">
                                 {col.description}
@@ -928,6 +942,40 @@ const RuleDesigner = ({ initialSql, ruleEventType, ruleEntityType, ruleName, rul
                 </div>
               );
             })}
+
+            {/* 🚀 VISTA LISTAS EAV (NUEVO) */}
+            {dictTab === 'LISTS' && dictionaryLists.map((list) => (
+               <div 
+                 key={list.list_id} 
+                 className="border border-amber-500/20 hover:border-amber-500/40 rounded-lg overflow-hidden shadow-sm bg-slate-900 cursor-grab active:cursor-grabbing transition-colors"
+                 draggable="true" 
+                 onDragStart={(e) => handleDragStart(e, list.sql_template)}
+               >
+                  <div className="flex justify-between items-start gap-2 p-2.5">
+                     <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-bold text-amber-400 font-mono truncate" title={list.display_name}>{list.display_name}</p>
+                        <p className="text-[9px] text-slate-400 mt-1 leading-snug">{list.description}</p>
+                        {list.is_generic ? (
+                           <span className="inline-block mt-1.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider">Genérica</span>
+                        ) : (
+                           <span className="inline-block mt-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider">Nativa</span>
+                        )}
+                     </div>
+                     <button
+                        onClick={(e) => handleCopy(e, list.sql_template)}
+                        className="p-1.5 bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white rounded text-[10px] shrink-0 mt-0.5 flex flex-col items-center border border-slate-700 hover:border-amber-500 transition-colors"
+                        title="Copiar Bloque SQL para Listas"
+                     >
+                        <span>{copiedItem === list.sql_template ? '✔️' : '📋'}</span>
+                        <span className="text-[8px] font-bold mt-0.5">{copiedItem === list.sql_template ? 'Copiado' : 'Copiar'}</span>
+                     </button>
+                  </div>
+               </div>
+            ))}
+
+            {dictTab === 'LISTS' && dictionaryLists.length === 0 && (
+               <p className="text-center text-[10px] text-slate-500 py-6 italic">No hay listas creadas en el catálogo.</p>
+            )}
           </div>
         </div>
       </div>
