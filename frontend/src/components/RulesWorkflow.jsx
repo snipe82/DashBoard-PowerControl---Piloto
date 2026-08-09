@@ -7,7 +7,6 @@ const RulesWorkflow = ({ onEditRule }) => {
   const [rules, setRules] = useState([]);
   const [cargando, setCargando] = useState(true);
 
-  // ESTADO PARA EL RELOJ EN TIEMPO REAL (Para el Shadow Mode)
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const [expandedColumns, setExpandedColumns] = useState({
@@ -39,20 +38,23 @@ const RulesWorkflow = ({ onEditRule }) => {
   const [simError, setSimError] = useState('');
   const [simViewMode, setSimViewMode] = useState('RESULTS'); 
 
-  // ESTADOS PARA PROGRAMAR SHADOW MODE
   const [shadowModalOpen, setShadowModalOpen] = useState(false);
   const [ruleForShadow, setRuleForShadow] = useState(null);
   const [shadowParams, setShadowParams] = useState({ start_at: '', end_at: '' });
   const [shadowLoading, setShadowLoading] = useState(false);
   const [shadowError, setShadowError] = useState('');
 
-  // ESTADOS PARA EL REPORTE DEL SHADOW MODE
   const [shadowReportOpen, setShadowReportOpen] = useState(false);
   const [shadowReportData, setShadowReportData] = useState([]);
   const [shadowReportLoading, setShadowReportLoading] = useState(false);
   const [ruleForReport, setRuleForReport] = useState(null);
 
   const [approvalErrorModal, setApprovalErrorModal] = useState(null);
+
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [auditData, setAuditData] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [expandedAudit, setExpandedAudit] = useState({});
 
   const leftScrollRef = useRef(null);
   const rightScrollRef = useRef(null);
@@ -94,6 +96,10 @@ const RulesWorkflow = ({ onEditRule }) => {
     setExpandedColumns(prev => ({ ...prev, [columnKey]: !prev[columnKey] }));
   };
 
+  const toggleAuditRow = (id) => {
+    setExpandedAudit(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const getSeverityColor = (sev) => {
     const colors = {
       'CRITICAL': 'bg-red-100 text-red-700 border-red-200',
@@ -110,9 +116,19 @@ const RulesWorkflow = ({ onEditRule }) => {
     let errores = [];
     let procesadas = 0;
 
+    const batchId = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'batch-' + Date.now();
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const batchCode = `PASE-${dateStr}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+
     for (const rule of workflow.STAGED) {
       try {
-        await api.put(`/api/v1/rules/${rule.rule_code}/status`, { status: 'DEPLOYED' });
+        await api.put(`/api/v1/rules/${rule.rule_code}/status`, { 
+            status: 'DEPLOYED',
+            changed_by: userSession.email || userSession.username || 'admin@powerpay.pe',
+            role: userRole,
+            deployment_id: batchId,
+            deployment_code: batchCode
+        });
         procesadas++;
       } catch (error) {
         console.error(`Error desplegando ${rule.rule_code}:`, error);
@@ -198,7 +214,11 @@ const RulesWorkflow = ({ onEditRule }) => {
 
   const handleRequestApproval = async (rule) => {
     try {
-      await api.put(`/api/v1/rules/${rule.rule_code}/status`, { status: 'PENDING_APPROVAL' });
+      await api.put(`/api/v1/rules/${rule.rule_code}/status`, { 
+          status: 'PENDING_APPROVAL',
+          changed_by: userSession.email || userSession.username || 'admin@powerpay.pe',
+          role: userRole
+      });
       fetchRules();
     } catch (error) {
       console.error("Error moviendo regla a por aprobar:", error);
@@ -281,16 +301,17 @@ const RulesWorkflow = ({ onEditRule }) => {
     }
   };
 
-  // 🚀 LÓGICA DEL VEREDICTO FINAL: Rechazar a DRAFT
   const handleRejectShadow = async (rule) => {
     try {
       setApprovalErrorModal(null);
       const payload = { 
         status: 'DRAFT',
-        version_number: rule.version_number 
+        version_number: rule.version_number,
+        changed_by: userSession.email || userSession.username || 'admin@powerpay.pe',
+        role: userRole 
       };
       await api.put(`/api/v1/rules/${rule.rule_code}/status`, payload);
-      setShadowReportOpen(false); // Cerramos el reporte
+      setShadowReportOpen(false); 
       fetchRules();
     } catch (error) {
       const status = error.response?.status;
@@ -300,16 +321,17 @@ const RulesWorkflow = ({ onEditRule }) => {
     }
   };
 
-  // 🚀 LÓGICA DEL VEREDICTO FINAL: Aprobar a STAGED
   const handleMoveToStaged = async (rule) => {
     try {
       setApprovalErrorModal(null); 
       const payload = { 
         status: 'STAGED',
-        version_number: rule.version_number 
+        version_number: rule.version_number,
+        changed_by: userSession.email || userSession.username || 'admin@powerpay.pe',
+        role: userRole 
       };
       await api.put(`/api/v1/rules/${rule.rule_code}/status`, payload);
-      setShadowReportOpen(false); // Cerramos el reporte si estaba abierto
+      setShadowReportOpen(false); 
       fetchRules();
     } catch (error) {
       const status = error.response?.status;
@@ -321,6 +343,56 @@ const RulesWorkflow = ({ onEditRule }) => {
       } else {
          alert(`Error HTTP ${status || 'Desconocido'}: ${backendMessage}`);
       }
+    }
+  };
+
+  const handleOpenAuditLog = async () => {
+    setAuditModalOpen(true);
+    setAuditLoading(true);
+    setAuditData([]);
+    setExpandedAudit({});
+    try {
+        const res = await api.get('/api/v1/rules/deployments/log?limit=100');
+        const listData = res.data?.data || [];
+        
+        const groupedMap = {};
+        
+        listData.forEach(log => {
+            const key = log.deployment_code || log.deployment_id || 'SIN_CODIGO';
+            
+            if (!groupedMap[key]) {
+                groupedMap[key] = {
+                    ...log,
+                    detalle_reglas: [],
+                    _rulesSet: new Set()
+                };
+            }
+            
+            if (Array.isArray(log.detalle_reglas) && log.detalle_reglas.length > 0) {
+                groupedMap[key].detalle_reglas.push(...log.detalle_reglas);
+                log.detalle_reglas.forEach(r => groupedMap[key]._rulesSet.add(r.rule_code));
+            } 
+            else if (log.rule_code) {
+                groupedMap[key].detalle_reglas.push({
+                    rule_code: log.rule_code,
+                    version_number: log.version_number,
+                    audit_id: log.audit_id
+                });
+                groupedMap[key]._rulesSet.add(log.rule_code);
+            }
+        });
+
+        const consolidatedData = Object.values(groupedMap).map(item => ({
+            ...item,
+            total_reglas: item.detalle_reglas.length,
+            reglas_incluidas: Array.from(item._rulesSet).join(', ')
+        })).sort((a, b) => new Date(b.deployed_at || 0) - new Date(a.deployed_at || 0));
+
+        setAuditData(consolidatedData);
+    } catch (error) {
+        console.error("Error cargando log de despliegues:", error);
+    } finally {
+        setAuditLoading(false);
     }
   };
 
@@ -499,7 +571,6 @@ const RulesWorkflow = ({ onEditRule }) => {
         <div className="pt-3 border-t border-gray-100 flex justify-between items-center mt-auto">
           <span className={`w-2 h-2 rounded-full shrink-0 ${rule.is_active ? 'bg-emerald-500' : 'bg-rose-400'}`} title={rule.is_active ? 'Encendida' : 'Apagada'}></span>
           
-          {/* 🚀 Le agregamos flex-wrap y justify-end para que los botones se acomoden solos */}
           <div className="flex gap-1.5 items-center justify-end flex-wrap">
             {stageKey === 'TESTING' && (
               <>
@@ -554,7 +625,7 @@ const RulesWorkflow = ({ onEditRule }) => {
                 <button 
                   onClick={() => handleMoveToStaged(rule)} 
                   disabled={isShadowInProgress}
-                  className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors border truncate ${isShadowInProgress ? 'text-gray-400 bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' : 'text-emerald-600 hover:text-white hover:bg-emerald-500 bg-emerald-50 border-emerald-200'}`}
+                  className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors border truncate ${isShadowInProgress ? 'text-gray-400 bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' : 'text-emerald-600 hover:text-white hover:bg-emerald-50 bg-emerald-50 border-emerald-200'}`}
                   title={isShadowInProgress ? 'La Sombra sigue activa' : 'Pasar a Staged'}
                 >
                   🚀 Staged
@@ -562,7 +633,6 @@ const RulesWorkflow = ({ onEditRule }) => {
               </>
             )}
             
-            {/* 🚀 BOTÓN SIEMPRE VISIBLE SIN IMPORTAR LA COLUMNA */}
             <button 
               onClick={() => onEditRule({ ...rule, _fromWorkflow: true })} 
               className="text-[10px] font-bold text-power-purple hover:text-white hover:bg-power-purple bg-power-purple/5 px-2 py-1.5 rounded-lg transition-colors border border-power-purple/20 truncate"
@@ -586,7 +656,15 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-          <div className="bg-slate-100 px-4 py-2 rounded-lg border border-slate-200 flex items-center gap-3 shadow-sm shrink-0">
+          
+          <button 
+             onClick={handleOpenAuditLog}
+             className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 text-xs h-full"
+          >
+             <span>📜</span> Historial de Pases a Prod
+          </button>
+
+          <div className="bg-slate-100 px-4 py-2 rounded-lg border border-slate-200 flex items-center gap-3 shadow-sm shrink-0 h-full">
              <span className="text-xl">{isManager ? '👔' : '👤'}</span>
              <div>
                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Perfil Activo</p>
@@ -604,7 +682,8 @@ const RulesWorkflow = ({ onEditRule }) => {
       ) : (
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4 custom-scrollbar min-h-0 select-none">
           
-          <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-slate-50 rounded-2xl border border-slate-200 h-full min-h-0">
+          {/* 🚀 CORRECCIÓN DE COLUMNAS: Asegurando anchos iguales (lg:flex-1 lg:min-w-[250px] shrink-0) */}
+          <div className="w-[85vw] sm:w-[300px] lg:flex-1 lg:min-w-[250px] shrink-0 flex flex-col bg-slate-50 rounded-2xl border border-slate-200 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100/50 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-slate-700 flex items-center gap-1.5 text-sm truncate">
                 <span>📝</span> Borradores
@@ -623,7 +702,7 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-amber-50/30 rounded-2xl border border-amber-200/50 h-full min-h-0">
+          <div className="w-[85vw] sm:w-[300px] lg:flex-1 lg:min-w-[250px] shrink-0 flex flex-col bg-amber-50/30 rounded-2xl border border-amber-200/50 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-amber-100 flex justify-between items-center bg-amber-100/30 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-amber-800 flex items-center gap-1.5 text-sm truncate">
                 <span>🧪</span> En Pruebas
@@ -642,7 +721,7 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-orange-50/30 rounded-2xl border border-orange-200/50 h-full min-h-0">
+          <div className="w-[85vw] sm:w-[300px] lg:flex-1 lg:min-w-[250px] shrink-0 flex flex-col bg-orange-50/30 rounded-2xl border border-orange-200/50 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-orange-100 flex justify-between items-center bg-orange-100/30 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-orange-800 flex items-center gap-1.5 text-sm truncate">
                 <span>⏳</span> Por Aprobar
@@ -661,7 +740,7 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-blue-50/40 rounded-2xl border border-blue-200/60 shadow-inner h-full min-h-0">
+          <div className="w-[85vw] sm:w-[300px] lg:flex-1 lg:min-w-[250px] shrink-0 flex flex-col bg-blue-50/40 rounded-2xl border border-blue-200/60 shadow-inner h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-blue-200 flex flex-col gap-3 bg-blue-100/50 rounded-t-2xl shrink-0">
               <div className="flex justify-between items-center gap-2">
                 <h3 className="font-black text-blue-900 flex items-center gap-1.5 text-sm truncate">
@@ -691,7 +770,7 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
-          <div className="w-[85vw] sm:w-[280px] lg:w-auto shrink-0 lg:shrink flex flex-col bg-emerald-50/30 rounded-2xl border border-emerald-200/50 h-full min-h-0">
+          <div className="w-[85vw] sm:w-[300px] lg:flex-1 lg:min-w-[250px] shrink-0 flex flex-col bg-emerald-50/30 rounded-2xl border border-emerald-200/50 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-emerald-100 flex justify-between items-center bg-emerald-100/30 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-emerald-800 flex items-center gap-1.5 text-sm truncate">
                 <span>🚀</span> Producción
@@ -710,6 +789,112 @@ const RulesWorkflow = ({ onEditRule }) => {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* 🚀 MODAL: HISTORIAL DE PASES A PRODUCCIÓN (AUDITORÍA AGRUPADA DEFENSIVA) */}
+      {auditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="bg-slate-950 p-4 border-b border-slate-800 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📜</span>
+                <div>
+                  <h2 className="text-lg font-black text-white">Auditoría de Despliegues</h2>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">Historial inmutable de reglas promovidas a Producción.</p>
+                </div>
+              </div>
+              <button 
+                 onClick={() => setAuditModalOpen(false)} 
+                 className="text-gray-400 hover:text-white bg-slate-800 hover:bg-rose-600 w-8 h-8 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
+              >✕</button>
+            </div>
+
+            <div className="flex-1 bg-white overflow-hidden p-4 flex flex-col">
+               {auditLoading ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center">
+                      <div className="w-10 h-10 border-4 border-slate-300 border-t-power-purple rounded-full animate-spin mb-4"></div>
+                      <p className="text-xs font-bold text-slate-500">Recuperando bitácora...</p>
+                  </div>
+               ) : auditData.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center">
+                      <span className="text-5xl mb-3 opacity-30">📭</span>
+                      <h3 className="font-black text-slate-600">Aún no hay despliegues</h3>
+                      <p className="text-xs text-slate-400 mt-2">No se han registrado pases a producción en el motor antifraude.</p>
+                  </div>
+               ) : (
+                  <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 text-[10px] uppercase tracking-widest text-slate-500 font-bold z-10 shadow-sm">
+                              <tr>
+                                  <th className="px-5 py-3">Fecha del Pase</th>
+                                  <th className="px-5 py-3">Código de Despliegue</th>
+                                  <th className="px-5 py-3 text-center">Métricas</th>
+                                  <th className="px-5 py-3 text-right">Autorizado Por</th>
+                                  <th className="px-5 py-3 text-center w-12">Detalle</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs">
+                              {auditData.map((log, idx) => (
+                                <React.Fragment key={log.deployment_id || idx}>
+                                  <tr className="hover:bg-slate-50 transition-colors cursor-pointer group" onClick={() => toggleAuditRow(log.deployment_id || idx)}>
+                                      <td className="px-5 py-3.5 font-mono text-slate-600">
+                                          {new Date(log.deployed_at).toLocaleString('es-PE', { 
+                                              year: 'numeric', month: 'short', day: '2-digit', 
+                                              hour: '2-digit', minute: '2-digit', second:'2-digit'
+                                          })}
+                                      </td>
+                                      <td className="px-5 py-3.5">
+                                          <p className="font-black text-power-blue uppercase tracking-tight">{log.deployment_code}</p>
+                                          {/* 🚀 Ocultamos las reglas en el subtítulo para forzar la apertura del detalle */}
+                                          <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ID: {log.deployment_id}</p>
+                                      </td>
+                                      <td className="px-5 py-3.5 text-center">
+                                          <span className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-md font-black tracking-wider text-[10px]">
+                                              {log.total_reglas} Reglas
+                                          </span>
+                                      </td>
+                                      <td className="px-5 py-3.5 text-right font-medium text-slate-600">
+                                          {log.deployed_by}
+                                      </td>
+                                      <td className="px-5 py-3.5 text-center text-slate-400 group-hover:text-power-purple transition-colors">
+                                          {expandedAudit[log.deployment_id || idx] ? '🔼' : '🔽'}
+                                      </td>
+                                  </tr>
+                                  
+                                  {/* 🚀 EL DETALLE OCULTO */}
+                                  {expandedAudit[log.deployment_id || idx] && (
+                                     <tr className="bg-slate-50/50">
+                                       <td colSpan="5" className="px-5 py-3 border-t border-slate-100">
+                                         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-inner max-w-2xl mx-auto">
+                                           <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2 border-b border-slate-100 pb-1 flex items-center gap-2">
+                                             <span>📦</span> Desglose de Versiones Desplegadas
+                                           </h4>
+                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                             {log.detalle_reglas?.map((dr, i) => (
+                                                <div key={`${dr.rule_code}-${i}`} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded border border-slate-100 hover:border-power-purple/30 transition-colors">
+                                                   <span className="font-mono text-[11px] font-bold text-power-purple">{dr.rule_code}</span>
+                                                   <span className="text-[9px] font-black text-slate-500 bg-white px-2 py-0.5 rounded shadow-sm border border-slate-200">v{dr.version_number}</span>
+                                                </div>
+                                             ))}
+                                           </div>
+                                         </div>
+                                       </td>
+                                     </tr>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+               )}
+            </div>
+            
+            <div className="bg-slate-50 p-4 border-t border-slate-200 shrink-0 flex justify-between items-center text-[10px] text-slate-500 font-medium">
+               <span>Total de pases consolidados: {auditData.length}</span>
+               <span className="uppercase tracking-widest font-black">Strict Mode • Immutable Log</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -856,7 +1041,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                                                               </tr>
                                                           ) : (
                                                               simResult.details.map((dt, i) => {
-                                                                  // Código actualizado para tu modal en RulesWorkflow.jsx
                                                                   const rawDate = dt.event_time_utc || dt.event_time || dt.created_at || dt.fecha || dt.triggered_at;
                                                                   const displayDate = rawDate ? new Date(rawDate).toLocaleString() : '—';
                                                                   
@@ -1041,7 +1225,7 @@ const RulesWorkflow = ({ onEditRule }) => {
                           </button>
                           <button 
                             onClick={() => handleMoveToStaged(ruleForReport)}
-                            className="flex-1 sm:flex-none text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                            className="flex-1 sm:flex-none text-xs font-black text-white bg-emerald-600 hover:bg-emerald-50 px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
                           >
                             🚀 Aprobar (Pasar a STAGED)
                           </button>

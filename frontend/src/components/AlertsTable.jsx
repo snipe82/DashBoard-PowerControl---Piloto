@@ -156,27 +156,40 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           };
 
           const agrupado = {};
+          const txProcesadas = {}; // 🛡️ NUEVO: Memoria para evitar Double-Counting por transacción
+
           arrData.forEach(item => {
             const id = resolveEntityId(item);
             
-            // 🚀 CORRECCIÓN: Leemos primero los campos pre-calculados del backend
+            // 🚀 NUEVO: Llave única de la transacción (application_id o fallback)
+            const txKey = item.application_id || item.operacion_id || item.id_transaccion || item.transaction_id || `${item.fecha}_${item.monto}`;
+            
+            // Leemos los campos del backend
             const valorOperacion = parseFloat(item.monto_total_riesgo || item.importe || item.monto || item.amount || 0);
             const cantidadAlertas = parseInt(item.total_alertas || 1, 10);
+
+            if (!txProcesadas[id]) txProcesadas[id] = new Set();
 
             if (!agrupado[id]) {
               agrupado[id] = { 
                 ...item, 
                 id_agrupacion: id, 
-                total_alertas: cantidadAlertas, // 🚀 Usamos el total real
-                monto_total_riesgo: valorOperacion, // 🚀 Usamos el monto real
+                total_alertas: cantidadAlertas,
+                monto_total_riesgo: valorOperacion,
                 locked_by: item.locked_by || null,
                 locked_at: item.locked_at || null,
                 fraud_type: item.fraud_type || null
               };
+              txProcesadas[id].add(txKey);
             } else {
-              // Si por algún motivo llegan varios registros del mismo ID, los sumamos correctamente
+              // Si llegan múltiples registros, siempre sumamos el contador visual de alertas
               agrupado[id].total_alertas += cantidadAlertas;
-              agrupado[id].monto_total_riesgo += valorOperacion;
+              
+              // 🛡️ MAGIA MATEMÁTICA: Solo sumamos dinero si esta transacción NO ha sido contada para este cliente
+              if (!txProcesadas[id].has(txKey)) {
+                  agrupado[id].monto_total_riesgo += valorOperacion;
+                  txProcesadas[id].add(txKey);
+              }
               
               if (item.fraud_type) agrupado[id].fraud_type = item.fraud_type; 
 

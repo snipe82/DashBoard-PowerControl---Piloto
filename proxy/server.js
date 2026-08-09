@@ -219,6 +219,15 @@ app.get('/api/v1/rules/latest', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
+// 🚀 NUEVA RUTA PROXY: Auditoría de Pases a Producción
+app.get('/api/v1/rules/deployments/log', async (req, res) => {
+    try {
+        const limit = req.query.limit || 100;
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/deployments/log?limit=${limit}`, { headers: getHeaders(req) });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { res.status(503).json({ error: 'Motor de auditoría no disponible' }); }
+});
+
 // 🚀 RUTA DEL SIMULADOR DE BACKTESTING
 app.post('/api/v1/rules/simulate', async (req, res) => {
     try {

@@ -6,7 +6,8 @@ const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, 
     DASHBOARD: 'Resumen de Alertas',
     OPEN: 'Triage de Alertas',
     IN_REVIEW: 'Alertas en Revisión',               
-    ADDITIONAL_REVIEW: 'Revisión Adicional',         
+    ADDITIONAL_REVIEW: 'Revisión Adicional', 
+    SUSPICIOUS: 'Sospechas', // 🚀 AÑADIDO EL TÍTULO FALTANTE        
     FRAUD: 'Casos Críticos',
     DISCARDED: 'Historial',
     RULES_LIST: 'Lista de Reglas', 
@@ -18,7 +19,8 @@ const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, 
 
   const tituloAMostrar = titulos[vistaActual] || (vistaActual ? vistaActual.replace(/_/g, ' ') : 'Módulo en Construcción');
   
-  const isAlertasView = ['OPEN', 'IN_REVIEW', 'ADDITIONAL_REVIEW', 'FRAUD', 'DISCARDED'].includes(vistaActual);
+  // 🚀 AÑADIDO 'SUSPICIOUS' AL ARREGLO DE VISTAS CON FILTROS
+  const isAlertasView = ['OPEN', 'IN_REVIEW', 'ADDITIONAL_REVIEW', 'SUSPICIOUS', 'FRAUD', 'DISCARDED'].includes(vistaActual);
   const isRulesView = vistaActual === 'RULES_LIST';
   const isUsersView = vistaActual === 'USERS_LIST';
   
@@ -71,7 +73,6 @@ const Header = ({ moduloActual, vistaActual, filtros, setFiltros, onToggleMenu, 
                   </div>
                 </div>
                 
-                {/* 🚀 NUEVO BLOQUE: DNI y Entidad visibles en móvil (50/50 de ancho) */}
                 <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
                   <div className="relative group flex-1 md:flex-none">
                     <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeWidth="2.5" strokeLinecap="round"></path></svg></span>
