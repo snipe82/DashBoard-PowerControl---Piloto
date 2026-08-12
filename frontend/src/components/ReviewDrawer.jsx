@@ -483,7 +483,6 @@ const ReviewDrawer = ({
     setSpeechHtml('');
     setSpeechCopied(false);
 
-    // 🚀 INYECCIÓN DEL NOMBRE DEL ANALISTA PARA EL BACKEND
     const userSession = JSON.parse(localStorage.getItem('user') || '{}');
     const analystName = userSession.name || userSession.full_name || userSession.username || userSession.email || "Área de Fraude";
 
