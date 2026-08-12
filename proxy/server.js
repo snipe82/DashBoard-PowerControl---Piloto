@@ -160,6 +160,20 @@ app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
+// 🚀 NUEVA RUTA PROXY: Generador de Mensaje de Validación (Speech)
+app.post('/api/v1/alerts/speech/generate', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/speech/generate`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) {
+        res.status(503).json({ error: 'Servicio de Speech Generator no disponible.' });
+    }
+});
+
 // ==========================================
 // 🛡️ 2.1 RUTAS DE RESOLUCIÓN DE CASOS (FRAUDE)
 // ==========================================
@@ -219,7 +233,6 @@ app.get('/api/v1/rules/latest', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVA RUTA PROXY: Auditoría de Pases a Producción
 app.get('/api/v1/rules/deployments/log', async (req, res) => {
     try {
         const limit = req.query.limit || 100;
@@ -228,7 +241,6 @@ app.get('/api/v1/rules/deployments/log', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor de auditoría no disponible' }); }
 });
 
-// 🚀 RUTA DEL SIMULADOR DE BACKTESTING
 app.post('/api/v1/rules/simulate', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/simulate`, { 
@@ -240,7 +252,6 @@ app.post('/api/v1/rules/simulate', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor de simulación no disponible.' }); }
 });
 
-// 🚀 RUTA PARA PROGRAMAR EL SHADOW MODE
 app.post('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/shadow`, { 
@@ -252,7 +263,6 @@ app.post('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor de reglas no disponible.' }); }
 });
 
-// 🚀 RUTA PARA LEER LAS ALERTAS FANTASMA DEL SHADOW MODE
 app.get('/api/v1/rules/:ruleCode/shadow/alerts', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/shadow/alerts`, { headers: getHeaders(req) });
@@ -260,7 +270,6 @@ app.get('/api/v1/rules/:ruleCode/shadow/alerts', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVO: RUTA PARA CANCELAR EL SHADOW MODE (BOTÓN DE PÁNICO)
 app.delete('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/shadow`, { 

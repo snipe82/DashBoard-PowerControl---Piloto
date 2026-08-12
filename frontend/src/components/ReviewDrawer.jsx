@@ -73,6 +73,12 @@ const ReviewDrawer = ({
   const [esInmutable, setEsInmutable] = useState(false);
   const [showParallelEvents, setShowParallelEvents] = useState(false);
 
+  const [speechModalOpen, setSpeechModalOpen] = useState(false);
+  const [speechLoading, setSpeechLoading] = useState(false);
+  const [speechHtml, setSpeechHtml] = useState('');
+  const [speechError, setSpeechError] = useState('');
+  const [speechCopied, setSpeechCopied] = useState(false);
+
   const tengoCandadoRef = useRef(false);
   const idCandadoRef = useRef(null);
   const seGuardoExitosamenteRef = useRef(false);
@@ -325,20 +331,6 @@ const ReviewDrawer = ({
   }, [selectedAlertId, isOpen, isReadOnlyContext]);
 
   useEffect(() => {
-    const handleUnload = () => {
-      const idALiberar = idCandadoRef.current;
-      const teniaCandado = tengoCandadoRef.current;
-      if (teniaCandado && idALiberar && !seGuardoExitosamenteRef.current && !isReadOnlyContext) {
-        const baseUrl = api.defaults.baseURL || window.location.origin;
-        const url = `${baseUrl}/api/alerts/${idALiberar}/unlock`;
-        navigator.sendBeacon(url); 
-      }
-    };
-    window.addEventListener('beforeunload', handleUnload);
-    return () => window.removeEventListener('beforeunload', handleUnload);
-  }, [isReadOnlyContext]);
-
-  useEffect(() => {
     if (selectedAlertId) {
       setCargandoPayload(true);
       api.get(`/api/alerts/${selectedAlertId}/payload`)
@@ -478,6 +470,65 @@ const ReviewDrawer = ({
     }
   };
 
+  const handleGenerateSpeech = async () => {
+    if (!payloadData) {
+        setSpeechError('No se puede generar el mensaje porque no hay datos del payload en esta alerta.');
+        setSpeechModalOpen(true);
+        return;
+    }
+    
+    setSpeechModalOpen(true);
+    setSpeechLoading(true);
+    setSpeechError('');
+    setSpeechHtml('');
+    setSpeechCopied(false);
+
+    // 🚀 INYECCIÓN DEL NOMBRE DEL ANALISTA PARA EL BACKEND
+    const userSession = JSON.parse(localStorage.getItem('user') || '{}');
+    const analystName = userSession.name || userSession.full_name || userSession.username || userSession.email || "Área de Fraude";
+
+    try {
+        const res = await api.post('/api/v1/alerts/speech/generate', { 
+            payload: payloadData,
+            analystName: analystName 
+        });
+        if (res.data?.data?.html) {
+            setSpeechHtml(res.data.data.html);
+        } else {
+            setSpeechError('El servidor respondió pero no incluyó la estructura HTML esperada.');
+        }
+    } catch (error) {
+        const msg = error.response?.data?.error || error.response?.data?.message || 'Fallo de conexión al generar el mensaje.';
+        setSpeechError(`Error: ${msg}`);
+    } finally {
+        setSpeechLoading(false);
+    }
+  };
+
+  const handleCopySpeech = () => {
+      if (!speechHtml) return;
+      
+      let cleanText = speechHtml
+          .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '') 
+          .replace(/<\/?br\s*\/?>/gi, '\n') 
+          .replace(/<\/p>/gi, '\n') 
+          .replace(/<[^>]+>/ig, '') 
+          .replace(/&nbsp;/g, ' '); 
+
+      cleanText = cleanText.split('\n')
+          .map(line => line.trim()) 
+          .filter(line => line.length > 0) 
+          .join('\n\n'); 
+
+      navigator.clipboard.writeText(cleanText).then(() => {
+          setSpeechCopied(true);
+          setTimeout(() => setSpeechCopied(false), 2000);
+      }).catch(err => {
+          console.error("Error copiando al portapapeles:", err);
+          alert("Error al intentar copiar el mensaje. Asegúrate de tener permisos.");
+      });
+  };
+
   const esSoloLectura = estadoActual === 'DISCARDED' || bloqueadoPorOtro || isReadOnlyContext;
   const scrollToDictamen = () => { formDictamenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const agregarRespuestaRapida = (frase) => { setComentario(prev => prev ? `${prev} - ${frase}` : frase); };
@@ -517,6 +568,16 @@ const ReviewDrawer = ({
                   <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
                 </button>
               </div>
+
+              {estadoActual === 'IN_REVIEW' && !isReadOnlyContext && (
+                 <button 
+                   onClick={handleGenerateSpeech}
+                   disabled={cargandoPayload || !selectedAlertId}
+                   className="shrink-0 text-[10px] md:text-xs bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95 border border-emerald-200 disabled:opacity-50"
+                 >
+                   💬 <span className="hidden sm:inline">Generar Speech</span>
+                 </button>
+              )}
 
               <button 
                 onClick={() => setShowParallelEvents(!showParallelEvents)}
@@ -612,12 +673,10 @@ const ReviewDrawer = ({
                       {alertas.map((al, idx) => {
                         const estaSeleccionado = selectedAlertId === al.alert_id;
                         
-                        // Radar de teléfonos
                         const celularDelPayload = payloadData?.telephonenumber || payloadData?.phone || payloadData?.customer?.phone || payloadData?.mobile;
                         const phoneFinal = al.celular || al.telefono || al.phone || al.mobile || rawTelefonoEncontrado || celularDelPayload;
                         const textCelular = phoneFinal ? phoneFinal : (estaSeleccionado && cargandoPayload ? '⏳...' : 'No reg.');
                         
-                        // 🚀 NUEVO RADAR DE CUOTAS (Ampliado y forzado a mostrar solo el número + ' meses')
                         const cuotasEncontradas = al.numberinstallments || al.cuotas || al.installments || al.plazo || al.term || al.numero_cuotas;
                         const cuotasPayload = payloadData?.numberinstallments ||
                                               payloadData?.cuotas || 
@@ -633,8 +692,6 @@ const ReviewDrawer = ({
                                               payloadData?.financing?.installments;
                                               
                         const finalCuotas = cuotasEncontradas || (estaSeleccionado ? cuotasPayload : null);
-                        
-                        // Extraemos solo los dígitos del valor encontrado
                         const finalCuotasNumero = finalCuotas ? String(finalCuotas).replace(/\D/g, '') : null;
                         const textCuotas = finalCuotasNumero ? `${finalCuotasNumero} meses` : (estaSeleccionado && cargandoPayload ? '⏳...' : 'No reg.');
 
@@ -844,6 +901,71 @@ const ReviewDrawer = ({
           </div>
         </div>
       </div>
+
+      {/* 🚀 MODAL DEL GENERADOR DE MENSAJES (SPEECH) */}
+      {speechModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white border border-emerald-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden transform scale-100 transition-transform">
+            
+            <div className="bg-emerald-50 px-5 py-4 border-b border-emerald-100 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">💬</span>
+                <div>
+                  <h3 className="font-black text-emerald-800 text-lg leading-tight">Generador de Validación</h3>
+                  <p className="text-emerald-600/80 text-[10px] font-black uppercase tracking-widest">Plantilla Inteligente</p>
+                </div>
+              </div>
+              <button 
+                 onClick={() => setSpeechModalOpen(false)} 
+                 className="text-emerald-600 hover:text-white hover:bg-emerald-600 bg-white border border-emerald-200 w-8 h-8 rounded-full flex items-center justify-center transition-colors text-sm font-bold shadow-sm"
+              >✕</button>
+            </div>
+
+            <div className="p-5 flex-1 bg-white">
+               {speechLoading ? (
+                  <div className="flex flex-col items-center justify-center py-8">
+                     <div className="w-10 h-10 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mb-4"></div>
+                     <p className="text-sm font-bold text-slate-600">Construyendo mensaje dinámico...</p>
+                  </div>
+               ) : speechError ? (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium flex items-start gap-2 shadow-sm">
+                     <span className="text-base mt-0.5">🛑</span> 
+                     <p>{speechError}</p>
+                  </div>
+               ) : (
+                  <div className="flex flex-col h-full">
+                     <p className="text-xs text-slate-500 mb-3 font-medium leading-relaxed">
+                        Este mensaje ha sido redactado automáticamente usando los datos de la transacción en curso. Cópialo para contactar al cliente original.
+                     </p>
+                     
+                     <div className="relative bg-[#f8f9fa] border border-slate-200 rounded-xl p-4 shadow-inner max-h-60 overflow-y-auto custom-scrollbar group">
+                        <div 
+                           className="text-slate-800 text-sm"
+                           dangerouslySetInnerHTML={{ __html: speechHtml }}
+                        />
+                     </div>
+                  </div>
+               )}
+            </div>
+
+            {!speechLoading && !speechError && (
+               <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center gap-4">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider hidden sm:block">No modifiques variables clave</span>
+                  <button 
+                    onClick={handleCopySpeech}
+                    className={`flex-1 sm:flex-none font-bold py-2.5 px-6 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 ${speechCopied ? 'bg-slate-800 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                  >
+                    {speechCopied ? (
+                       <><span>✔️</span> Copiado al Portapapeles</>
+                    ) : (
+                       <><span>📋</span> Copiar Mensaje</>
+                    )}
+                  </button>
+               </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 };
