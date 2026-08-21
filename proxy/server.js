@@ -160,7 +160,6 @@ app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVA RUTA PROXY: Generador de Mensaje de Validación (Speech)
 app.post('/api/v1/alerts/speech/generate', async (req, res) => {
     try {
         const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/speech/generate`, {
@@ -171,6 +170,34 @@ app.post('/api/v1/alerts/speech/generate', async (req, res) => {
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) {
         res.status(503).json({ error: 'Servicio de Speech Generator no disponible.' });
+    }
+});
+
+// 🚀 RUTA PROXY: Puente para inyectar datos a Lista Negra (Blacklisting)
+app.post('/api/v1/alerts/:alert_id/blacklist', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.alert_id}/blacklist`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) {
+        res.status(503).json({ error: 'Servicio de Blacklist no disponible temporalmente.' });
+    }
+});
+
+// 🚀 NUEVA RUTA PROXY: Puente para la REVERSA de datos de la Lista Negra (Whitelisting)
+app.post('/api/v1/alerts/:alert_id/blacklist/remove', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.alert_id}/blacklist/remove`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) {
+        res.status(503).json({ error: 'Servicio de Reversa (Whitelist) no disponible temporalmente.' });
     }
 });
 
@@ -613,7 +640,6 @@ app.post('/api/lists/:list_id/bulk', async (req, res) => {
     } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
 });
 
-// 🚀 NUEVA RUTA PROXY: Listado Paginado de Registros (Escudada contra colisiones)
 app.get('/api/lists/:list_id', async (req, res) => {
     try {
         if(req.params.list_id.toLowerCase() === 'catalog') return res.status(400).json({error: "Ruta reservada"});

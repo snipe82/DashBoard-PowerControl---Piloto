@@ -35,6 +35,19 @@ const extractAmount = (m) => {
   return parseFloat(m || 0);
 };
 
+// 🚀 ESCÁNER PROFUNDO DE CORREOS
+const extraerCorreoUniversal = (alerta, payload) => {
+  // 1. Intentar rutas exactas conocidas
+  let email = alerta?.email || alerta?.correo || payload?.email || payload?.correo || payload?.emailAddress || payload?.customer_email || payload?.customer?.email || payload?.client?.email || payload?.user?.email || payload?.buyer?.email;
+  
+  // 2. Si falla, escanear todo el JSON con Regex buscando el patrón de email
+  if (!email && payload) {
+    const match = JSON.stringify(payload).match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
+    if (match) email = match[1];
+  }
+  return email;
+};
+
 const ReviewDrawer = ({ 
   isOpen, 
   onClose, 
@@ -78,6 +91,18 @@ const ReviewDrawer = ({
   const [speechHtml, setSpeechHtml] = useState('');
   const [speechError, setSpeechError] = useState('');
   const [speechCopied, setSpeechCopied] = useState(false);
+
+  const [blacklistModalOpen, setBlacklistModalOpen] = useState(false);
+  const [blacklistLoading, setBlacklistLoading] = useState(false);
+  const [blacklistError, setBlacklistError] = useState('');
+  const [blacklistSuccess, setBlacklistSuccess] = useState('');
+  const [pendingReviewPayload, setPendingReviewPayload] = useState(null);
+
+  const [whitelistModalOpen, setWhitelistModalOpen] = useState(false);
+  const [whitelistLoading, setWhitelistLoading] = useState(false);
+  const [whitelistError, setWhitelistError] = useState('');
+  const [whitelistSuccess, setWhitelistSuccess] = useState('');
+  const [whitelistItems, setWhitelistItems] = useState([]);
 
   const tengoCandadoRef = useRef(false);
   const idCandadoRef = useRef(null);
@@ -184,11 +209,15 @@ const ReviewDrawer = ({
             let totalMontoReal = 0;
 
             sortedAlerts.forEach(al => {
-              const fechaSinSegundos = al.fecha ? new Date(al.fecha).setSeconds(0, 0) : '0';
-              const txKey = al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaSinSegundos}_${safeString(al.monto)}`;
+              const fechaCorta = al.fecha ? new Date(al.fecha).toLocaleDateString() : '0';
+              const montoDeduplicacion = extractAmount(al.monto);
+              const dniDeduplicacion = al.dni || al.document_number || '0';
+              
+              const txKey = al.application_id || al.app_id || al.transaction_id || al.operacion_id || al.payment_id || al.id_transaccion || `${fechaCorta}_${dniDeduplicacion}_${montoDeduplicacion}`;
+              
               if (!txProcesadas.has(txKey)) {
                 txProcesadas.add(txKey);
-                totalMontoReal += extractAmount(al.monto);
+                totalMontoReal += montoDeduplicacion;
               }
             });
 
@@ -387,6 +416,64 @@ const ReviewDrawer = ({
   const telefonoNativoEnLista = alertas.find(a => a.celular || a.telefono || a.phone || a.mobile);
   const rawTelefonoEncontrado = telefonoNativoEnLista ? (telefonoNativoEnLista.celular || telefonoNativoEnLista.telefono || telefonoNativoEnLista.phone || telefonoNativoEnLista.mobile) : '';
 
+  const ejecutarResolucionDeAlerta = async (reviewBody) => {
+      try {
+        const userSession = JSON.parse(localStorage.getItem('user') || '{}');
+        const analistaResponsable = userSession.email || userSession.username || "analista@powerpay.pe";
+
+        if (isFraudCaseContext) {
+          const casePayload = {
+            case_status: reviewBody.status,
+            fraud_type: reviewBody.status === 'CLOSED_CONFIRMED_FRAUD' ? fraudType : null,
+            resolution_comment: reviewBody.review_comment,
+            reviewer_id: analistaResponsable
+          };
+
+          const targetCaseId = alertaActiva.case_id || alertaActiva.id_caso || alertaActiva.alert_id;
+          const resolveUrl = `/api/v1/cases/${targetCaseId}/resolve`;
+          const res = await api.put(resolveUrl, casePayload);
+          
+          if (res.status === 200 || res.status === 201) {
+            seGuardoExitosamenteRef.current = true;
+            if (haySiguiente && onSiguiente) onSiguiente();
+            else onClose();
+            setTimeout(() => { recargarTabla(); }, 800);
+          }
+        } else {
+          const cleanIdParaRuta = String(reviewBody.dni_rut_id).trim();
+          const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanIdParaRuta);
+          
+          const reviewUrl = esUUID ? `/api/alerts/entity/${cleanIdParaRuta}/review` : `/api/alerts/dni/${cleanIdParaRuta}/review`;
+          
+          const body = {
+            status: reviewBody.status,
+            reviewer_id: analistaResponsable,
+            review_comment: reviewBody.review_comment,
+            entity_parent_id: String(entityId).trim(),
+            target_dni: alertaActiva.dni || alertaActiva.document_number || null,
+            target_cliente: alertaActiva.cliente || alertaActiva.full_name || null
+          };
+          
+          const res = await api.patch(reviewUrl, body);
+          if (res.status === 200 || res.status === 201) {
+            seGuardoExitosamenteRef.current = true;
+            if (haySiguiente && onSiguiente) onSiguiente();
+            else onClose();
+            setTimeout(() => { recargarTabla(); }, 800);
+          }
+        }
+      } catch (e) {
+        console.error("🚨 DEBUG ERROR BACKEND:", e.response?.data);
+        const status = e.response?.status;
+        let msg = e.response?.data?.message || e.response?.data?.error || "Error de red al intentar guardar la revisión.";
+        if (e.response?.data && typeof e.response.data === 'object') {
+            msg = `HTTP ${status}: ` + JSON.stringify(e.response.data, null, 2);
+        }
+        if (status === 400 || status === 404) setErrorDictamen(msg);
+        else alert(msg);
+      }
+  };
+
   const guardarRevisionMasiva = async () => {
     if (isReadOnlyContext) return; 
     setErrorDictamen('');
@@ -409,65 +496,134 @@ const ReviewDrawer = ({
 
     if (!idParaRuta) return alert("Error crítico: No se encontró un identificador válido para este cliente/entidad.");
 
-    const cleanIdParaRuta = String(idParaRuta).trim();
-    const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanIdParaRuta);
-    
-    const userSession = JSON.parse(localStorage.getItem('user') || '{}');
-    const analistaResponsable = userSession.email || userSession.username || "analista@powerpay.pe";
+    const pendingReviewBody = {
+        status: nuevoEstado,
+        review_comment: comentario,
+        dni_rut_id: idParaRuta
+    };
 
-    try {
-      if (isFraudCaseContext) {
-        const casePayload = {
-          case_status: nuevoEstado,
-          fraud_type: nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' ? fraudType : null,
-          resolution_comment: comentario,
-          reviewer_id: analistaResponsable
-        };
-
-        const targetCaseId = alertaActiva.case_id || alertaActiva.id_caso || alertaActiva.alert_id;
-        const resolveUrl = `/api/v1/cases/${targetCaseId}/resolve`;
-        const res = await api.put(resolveUrl, casePayload);
+    if (nuevoEstado === 'SUSPICIOUS' || nuevoEstado === 'FRAUD' || nuevoEstado === 'CLOSED_CONFIRMED_FRAUD') {
+        setPendingReviewPayload(pendingReviewBody);
+        setBlacklistError('');
+        setBlacklistSuccess('');
+        setBlacklistModalOpen(true);
+    } 
+    else if ((nuevoEstado === 'DISCARDED' || nuevoEstado === 'CLOSED_FALSE_POSITIVE') && (estadoActual === 'SUSPICIOUS' || estadoActual === 'FRAUD')) {
+        setPendingReviewPayload(pendingReviewBody);
+        setWhitelistError('');
+        setWhitelistSuccess('');
         
-        if (res.status === 200 || res.status === 201) {
-          seGuardoExitosamenteRef.current = true;
-          if (haySiguiente && onSiguiente) onSiguiente();
-          else onClose();
-          setTimeout(() => { recargarTabla(); }, 800);
+        const dniValue = alertaActiva?.dni || alertaActiva?.document_number || payloadData?.document_number;
+        const phoneValue = rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile;
+        
+        // 🚀 CORRECCIÓN DEFINITIVA: Invocación del Escáner Universal
+        const emailValue = extraerCorreoUniversal(alertaActiva, payloadData);
+        
+        const items = [];
+        if (dniValue) items.push({ list_id: 'DNI', value: dniValue, checked: true });
+        if (emailValue) items.push({ list_id: 'EMAIL', value: emailValue, checked: true });
+        if (phoneValue) items.push({ list_id: 'USER_PHONE', value: phoneValue, checked: true });
+        
+        if (items.length > 0) {
+            setWhitelistItems(items);
+            setWhitelistModalOpen(true);
+        } else {
+            ejecutarResolucionDeAlerta(pendingReviewBody);
         }
-      } else {
-        const reviewUrl = esUUID ? `/api/alerts/entity/${cleanIdParaRuta}/review` : `/api/alerts/dni/${cleanIdParaRuta}/review`;
-        const body = {
-          status: nuevoEstado,
-          reviewer_id: analistaResponsable,
-          review_comment: comentario,
-          entity_parent_id: String(entityId).trim(),
-          target_dni: alertaActiva.dni || alertaActiva.document_number || null,
-          target_cliente: alertaActiva.cliente || alertaActiva.full_name || null
-        };
-        const res = await api.patch(reviewUrl, body);
-        if (res.status === 200 || res.status === 201) {
-          seGuardoExitosamenteRef.current = true;
-          if (haySiguiente && onSiguiente) onSiguiente();
-          else onClose();
-          setTimeout(() => { recargarTabla(); }, 800);
-        }
-      }
-    } catch (e) {
-      console.error("🚨 DEBUG ERROR BACKEND:", e.response?.data);
-      const status = e.response?.status;
+    } 
+    else {
+        ejecutarResolucionDeAlerta(pendingReviewBody);
+    }
+  };
+
+  const handleSubmitToBlacklist = async () => {
+      setBlacklistLoading(true);
+      setBlacklistError('');
       
-      let msg = e.response?.data?.message || e.response?.data?.error || "Error de red al intentar guardar la revisión.";
+      const dniValue = alertaActiva?.dni || alertaActiva?.document_number || payloadData?.document_number;
+      const phoneValue = rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile;
       
-      if (e.response?.data && typeof e.response.data === 'object') {
-          msg = `HTTP ${status}: ` + JSON.stringify(e.response.data, null, 2);
+      // 🚀 CORRECCIÓN DEFINITIVA: Invocación del Escáner Universal
+      const emailValue = extraerCorreoUniversal(alertaActiva, payloadData);
+
+      const itemsToSend = [];
+      if (dniValue) itemsToSend.push({ list_id: 'DNI', value: String(dniValue).trim() });
+      if (emailValue) itemsToSend.push({ list_id: 'EMAIL', value: String(emailValue).trim() });
+      if (phoneValue) itemsToSend.push({ list_id: 'USER_PHONE', value: String(phoneValue).trim() });
+
+      if (itemsToSend.length === 0) {
+          setBlacklistError("No se extrajeron credenciales válidas (DNI, Email o Teléfono) para bloquear.");
+          setBlacklistLoading(false);
+          return;
       }
 
-      if (status === 400 || status === 404) {
-        setErrorDictamen(msg);
-      } else {
-        alert(msg);
+      try {
+          await api.post(`/api/v1/alerts/${alertaActiva.alert_id}/blacklist`, {
+              items: itemsToSend,
+              reason: comentario 
+          });
+          
+          setBlacklistSuccess("¡Datos inyectados en la Lista Negra exitosamente!");
+          
+          setTimeout(() => {
+              setBlacklistModalOpen(false);
+              ejecutarResolucionDeAlerta(pendingReviewPayload);
+          }, 1500);
+
+      } catch (error) {
+          const msg = error.response?.data?.error || error.response?.data?.message || 'Error al intentar actualizar la Lista Negra.';
+          setBlacklistError(msg);
+          setBlacklistLoading(false);
       }
-    }
+  };
+
+  const handleSkipBlacklist = () => {
+      setBlacklistModalOpen(false);
+      ejecutarResolucionDeAlerta(pendingReviewPayload);
+  };
+
+  const toggleWhitelistItem = (idx) => {
+      const newItems = [...whitelistItems];
+      newItems[idx].checked = !newItems[idx].checked;
+      setWhitelistItems(newItems);
+  };
+
+  const handleSubmitToWhitelist = async () => {
+      setWhitelistLoading(true);
+      setWhitelistError('');
+
+      const itemsToSend = whitelistItems.filter(i => i.checked).map(i => ({
+          list_id: i.list_id,
+          value: String(i.value).trim()
+      }));
+
+      if (itemsToSend.length === 0) {
+          handleSkipWhitelist();
+          return;
+      }
+
+      try {
+          await api.post(`/api/v1/alerts/${alertaActiva.alert_id}/blacklist/remove`, {
+              items: itemsToSend
+          });
+          
+          setWhitelistSuccess("¡Registros removidos de las listas de bloqueo exitosamente!");
+          
+          setTimeout(() => {
+              setWhitelistModalOpen(false);
+              ejecutarResolucionDeAlerta(pendingReviewPayload);
+          }, 1500);
+
+      } catch (error) {
+          const msg = error.response?.data?.error || error.response?.data?.message || 'Error al intentar limpiar la Lista Negra.';
+          setWhitelistError(msg);
+          setWhitelistLoading(false);
+      }
+  };
+
+  const handleSkipWhitelist = () => {
+      setWhitelistModalOpen(false);
+      ejecutarResolucionDeAlerta(pendingReviewPayload);
   };
 
   const handleGenerateSpeech = async () => {
@@ -900,6 +1056,146 @@ const ReviewDrawer = ({
           </div>
         </div>
       </div>
+
+      {/* 🚀 MODAL: CONFIRMACIÓN PARA BLACKLIST (LISTA NEGRA) */}
+      {blacklistModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/90 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-700 transform scale-100 transition-transform">
+            <div className="bg-slate-950 px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+              <span className="text-3xl text-rose-500">🚫</span>
+              <div>
+                <h3 className="font-black text-white text-lg leading-tight">Envío a Lista Negra</h3>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-0.5">Política Anti-Fraude Activa</p>
+              </div>
+            </div>
+            
+            <div className="p-5">
+              <p className="text-sm text-slate-600 leading-relaxed font-medium mb-4">
+                Estás escalando este expediente como <span className="font-black text-rose-600">{nuevoEstado === 'FRAUD' ? 'Fraude' : 'Sospechoso'}</span>. ¿Deseas inyectar las credenciales de este cliente en la lista negra central para bloquear transacciones futuras de manera automática?
+              </p>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 mb-4 shadow-inner">
+                 <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">DNI Objetivo:</span>
+                    <span className="font-mono font-black text-slate-700">{alertaActiva?.dni || alertaActiva?.document_number || payloadData?.document_number || 'No Detectado'}</span>
+                 </div>
+                 <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Telf / Celular:</span>
+                    <span className="font-mono font-black text-slate-700">{rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile || 'No Detectado'}</span>
+                 </div>
+              </div>
+
+              {blacklistError && (
+                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm">
+                  <span className="text-sm mt-0.5">🛑</span> 
+                  <p>{blacklistError}</p>
+                </div>
+              )}
+              
+              {blacklistSuccess && (
+                <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-center justify-center gap-2 shadow-sm">
+                  <span className="text-lg">✔️</span> 
+                  <p>{blacklistSuccess}</p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 mt-5">
+                <button 
+                  onClick={handleSkipBlacklist}
+                  disabled={blacklistLoading || blacklistSuccess}
+                  className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Omitir y Solo Cerrar Alerta
+                </button>
+                <button 
+                  onClick={handleSubmitToBlacklist}
+                  disabled={blacklistLoading || blacklistSuccess || (!alertaActiva?.dni && !rawTelefonoEncontrado && !payloadData?.document_number && !payloadData?.phone)}
+                  className="flex-[1.5] py-2.5 px-4 rounded-xl text-xs font-black bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-md transition-all active:scale-95"
+                >
+                  {blacklistLoading ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    'Sí, Enviar a Lista Negra'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 MODAL: CONFIRMACIÓN PARA WHITELIST (REVERSA DE LISTA NEGRA) */}
+      {whitelistModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/90 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-700 transform scale-100 transition-transform">
+            <div className="bg-slate-950 px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+              <span className="text-3xl text-emerald-500">🔓</span>
+              <div>
+                <h3 className="font-black text-white text-lg leading-tight">Reversa de Lista Negra</h3>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-0.5">Módulo de Whitelisting Activo</p>
+              </div>
+            </div>
+            
+            <div className="p-5">
+              <p className="text-sm text-slate-600 leading-relaxed font-medium mb-4">
+                Estás marcando este expediente como <span className="font-black text-emerald-600">Falso Positivo (Descartado)</span>. ¿Deseas remover las siguientes credenciales de las listas de bloqueo para evitar que el motor rechace futuras compras de este cliente?
+              </p>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3 mb-4 shadow-inner max-h-48 overflow-y-auto">
+                 {whitelistItems.map((item, idx) => (
+                    <label key={idx} className={`flex items-center gap-3 p-2 rounded border cursor-pointer transition-colors ${item.checked ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                       <input 
+                          type="checkbox" 
+                          checked={item.checked} 
+                          onChange={() => toggleWhitelistItem(idx)}
+                          className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 accent-emerald-600 cursor-pointer"
+                       />
+                       <div className="flex-1">
+                          <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px] block leading-none">{item.list_id}</span>
+                          <span className={`font-mono font-black ${item.checked ? 'text-emerald-700' : 'text-slate-500'}`}>{item.value}</span>
+                       </div>
+                    </label>
+                 ))}
+              </div>
+
+              {whitelistError && (
+                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm">
+                  <span className="text-sm mt-0.5">🛑</span> 
+                  <p>{whitelistError}</p>
+                </div>
+              )}
+              
+              {whitelistSuccess && (
+                <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-center justify-center gap-2 shadow-sm">
+                  <span className="text-lg">✔️</span> 
+                  <p>{whitelistSuccess}</p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 mt-5">
+                <button 
+                  onClick={handleSkipWhitelist}
+                  disabled={whitelistLoading || whitelistSuccess}
+                  className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Omitir y Solo Cerrar Alerta
+                </button>
+                <button 
+                  onClick={handleSubmitToWhitelist}
+                  disabled={whitelistLoading || whitelistSuccess || !whitelistItems.some(i => i.checked)}
+                  className="flex-[1.5] py-2.5 px-4 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-md transition-all active:scale-95"
+                >
+                  {whitelistLoading ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    'Liberar y Cerrar Alerta'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🚀 MODAL DEL GENERADOR DE MENSAJES (SPEECH) */}
       {speechModalOpen && (
