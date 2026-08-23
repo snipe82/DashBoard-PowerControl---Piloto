@@ -37,10 +37,7 @@ const extractAmount = (m) => {
 
 // 🚀 ESCÁNER PROFUNDO DE CORREOS
 const extraerCorreoUniversal = (alerta, payload) => {
-  // 1. Intentar rutas exactas conocidas
   let email = alerta?.email || alerta?.correo || payload?.email || payload?.correo || payload?.emailAddress || payload?.customer_email || payload?.customer?.email || payload?.client?.email || payload?.user?.email || payload?.buyer?.email;
-  
-  // 2. Si falla, escanear todo el JSON con Regex buscando el patrón de email
   if (!email && payload) {
     const match = JSON.stringify(payload).match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
     if (match) email = match[1];
@@ -103,6 +100,12 @@ const ReviewDrawer = ({
   const [whitelistError, setWhitelistError] = useState('');
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
   const [whitelistItems, setWhitelistItems] = useState([]);
+
+  // 🚀 ESTADOS PARA REVERSIÓN DE FRAUDE A SOSPECHOSO
+  const [revertModalOpen, setRevertModalOpen] = useState(false);
+  const [revertComment, setRevertComment] = useState('');
+  const [revertLoading, setRevertLoading] = useState(false);
+  const [revertError, setRevertError] = useState('');
 
   const tengoCandadoRef = useRef(false);
   const idCandadoRef = useRef(null);
@@ -421,7 +424,9 @@ const ReviewDrawer = ({
         const userSession = JSON.parse(localStorage.getItem('user') || '{}');
         const analistaResponsable = userSession.email || userSession.username || "analista@powerpay.pe";
 
-        if (isFraudCaseContext) {
+        const useCaseEndpoint = isFraudCaseContext && !reviewBody.is_revert;
+
+        if (useCaseEndpoint) {
           const casePayload = {
             case_status: reviewBody.status,
             fraud_type: reviewBody.status === 'CLOSED_CONFIRMED_FRAUD' ? fraudType : null,
@@ -440,10 +445,17 @@ const ReviewDrawer = ({
             setTimeout(() => { recargarTabla(); }, 800);
           }
         } else {
-          const cleanIdParaRuta = String(reviewBody.dni_rut_id).trim();
-          const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanIdParaRuta);
+          // 🚀 CORRECCIÓN DEFINITIVA: ENRUTAMIENTO ESTRICTO SIN EL PREFIJO /V1/
+          let reviewUrl = '';
           
-          const reviewUrl = esUUID ? `/api/alerts/entity/${cleanIdParaRuta}/review` : `/api/alerts/dni/${cleanIdParaRuta}/review`;
+          if (reviewBody.is_revert) {
+             // El proxy espera "/api/alerts/:id/review", NO "/api/v1/alerts..."
+             reviewUrl = `/api/alerts/${alertaActiva.alert_id}/review`;
+          } else {
+             const cleanIdParaRuta = String(reviewBody.dni_rut_id).trim();
+             const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanIdParaRuta);
+             reviewUrl = esUUID ? `/api/alerts/entity/${cleanIdParaRuta}/review` : `/api/alerts/dni/${cleanIdParaRuta}/review`;
+          }
           
           const body = {
             status: reviewBody.status,
@@ -457,6 +469,10 @@ const ReviewDrawer = ({
           const res = await api.patch(reviewUrl, body);
           if (res.status === 200 || res.status === 201) {
             seGuardoExitosamenteRef.current = true;
+            
+            // Si es un rescate, retornamos true para que siga el flujo y limpie la Lista Negra
+            if (reviewBody.is_revert) return true;
+
             if (haySiguiente && onSiguiente) onSiguiente();
             else onClose();
             setTimeout(() => { recargarTabla(); }, 800);
@@ -471,6 +487,8 @@ const ReviewDrawer = ({
         }
         if (status === 400 || status === 404) setErrorDictamen(msg);
         else alert(msg);
+        
+        return false;
       }
   };
 
@@ -496,10 +514,14 @@ const ReviewDrawer = ({
 
     if (!idParaRuta) return alert("Error crítico: No se encontró un identificador válido para este cliente/entidad.");
 
+    const isRevertAction = nuevoEstado === 'REVERT_TO_SUSPICIOUS';
+    const finalStatusToSend = isRevertAction ? 'SUSPICIOUS' : nuevoEstado;
+
     const pendingReviewBody = {
-        status: nuevoEstado,
+        status: finalStatusToSend,
         review_comment: comentario,
-        dni_rut_id: idParaRuta
+        dni_rut_id: idParaRuta,
+        is_revert: isRevertAction
     };
 
     if (nuevoEstado === 'SUSPICIOUS' || nuevoEstado === 'FRAUD' || nuevoEstado === 'CLOSED_CONFIRMED_FRAUD') {
@@ -508,15 +530,13 @@ const ReviewDrawer = ({
         setBlacklistSuccess('');
         setBlacklistModalOpen(true);
     } 
-    else if ((nuevoEstado === 'DISCARDED' || nuevoEstado === 'CLOSED_FALSE_POSITIVE') && (estadoActual === 'SUSPICIOUS' || estadoActual === 'FRAUD')) {
+    else if ((nuevoEstado === 'DISCARDED' || nuevoEstado === 'CLOSED_FALSE_POSITIVE' || isRevertAction) && (estadoActual === 'SUSPICIOUS' || estadoActual === 'FRAUD')) {
         setPendingReviewPayload(pendingReviewBody);
         setWhitelistError('');
         setWhitelistSuccess('');
         
         const dniValue = alertaActiva?.dni || alertaActiva?.document_number || payloadData?.document_number;
         const phoneValue = rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile;
-        
-        // 🚀 CORRECCIÓN DEFINITIVA: Invocación del Escáner Universal
         const emailValue = extraerCorreoUniversal(alertaActiva, payloadData);
         
         const items = [];
@@ -525,8 +545,16 @@ const ReviewDrawer = ({
         if (phoneValue) items.push({ list_id: 'USER_PHONE', value: phoneValue, checked: true });
         
         if (items.length > 0) {
-            setWhitelistItems(items);
-            setWhitelistModalOpen(true);
+            if (isRevertAction) {
+                const success = await ejecutarResolucionDeAlerta(pendingReviewBody);
+                if (success) {
+                   setWhitelistItems(items);
+                   setWhitelistModalOpen(true);
+                }
+            } else {
+                setWhitelistItems(items);
+                setWhitelistModalOpen(true);
+            }
         } else {
             ejecutarResolucionDeAlerta(pendingReviewBody);
         }
@@ -542,8 +570,6 @@ const ReviewDrawer = ({
       
       const dniValue = alertaActiva?.dni || alertaActiva?.document_number || payloadData?.document_number;
       const phoneValue = rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile;
-      
-      // 🚀 CORRECCIÓN DEFINITIVA: Invocación del Escáner Universal
       const emailValue = extraerCorreoUniversal(alertaActiva, payloadData);
 
       const itemsToSend = [];
@@ -611,7 +637,12 @@ const ReviewDrawer = ({
           
           setTimeout(() => {
               setWhitelistModalOpen(false);
-              ejecutarResolucionDeAlerta(pendingReviewPayload);
+              if (pendingReviewPayload?.is_revert) {
+                  onClose();
+                  recargarTabla();
+              } else {
+                  ejecutarResolucionDeAlerta(pendingReviewPayload);
+              }
           }, 1500);
 
       } catch (error) {
@@ -623,7 +654,12 @@ const ReviewDrawer = ({
 
   const handleSkipWhitelist = () => {
       setWhitelistModalOpen(false);
-      ejecutarResolucionDeAlerta(pendingReviewPayload);
+      if (pendingReviewPayload?.is_revert) {
+          onClose();
+          setTimeout(() => { recargarTabla(); }, 800);
+      } else {
+          ejecutarResolucionDeAlerta(pendingReviewPayload);
+      }
   };
 
   const handleGenerateSpeech = async () => {
@@ -934,6 +970,19 @@ const ReviewDrawer = ({
                   <div ref={formDictamenRef} className="bg-white p-4 rounded-xl border border-gray-200 scroll-mt-6 shadow-sm">
                     <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Final del Caso</h4>
                     
+                    {/* 🚀 INYECCIÓN DE ADVERTENCIA PARA REVERSIÓN DE FRAUDE */}
+                    {nuevoEstado === 'REVERT_TO_SUSPICIOUS' && (
+                      <div className="animate-fade-in mb-4 bg-amber-50 border border-amber-200 p-3 rounded-xl shadow-sm">
+                         <div className="flex items-start gap-2">
+                           <span className="text-xl">⚠️</span>
+                           <div>
+                             <p className="text-xs font-bold text-rose-600 mb-1">Atención: Has seleccionado revertir la decisión.</p>
+                             <p className="text-[10px] text-amber-800 font-medium">Esta acción requiere justificación y te permitirá limpiar la Lista Negra en el siguiente paso para evitar bloqueos innecesarios.</p>
+                           </div>
+                         </div>
+                      </div>
+                    )}
+
                     {errorDictamen && (
                       <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm overflow-x-auto">
                         <span className="text-sm mt-0.5">🛑</span> 
@@ -946,6 +995,7 @@ const ReviewDrawer = ({
                         <>
                           <div className="bg-red-50/50 border border-red-100 p-3 rounded-xl shadow-sm mb-2">
                             <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5 text-red-800">Resolución del Caso (Obligatorio):</label>
+                            {/* 🚀 NUEVA OPCIÓN AÑADIDA DIRECTAMENTE EN EL SELECT DROPDOWN */}
                             <select 
                               value={esSoloLectura ? 'CLOSED_FALSE_POSITIVE' : nuevoEstado} 
                               onChange={(e) => {
@@ -958,6 +1008,7 @@ const ReviewDrawer = ({
                             >
                               <option value="CLOSED_CONFIRMED_FRAUD">🚨 Cerrar como Fraude Confirmado</option>
                               <option value="CLOSED_FALSE_POSITIVE">✅ Cerrar como Falso Positivo</option>
+                              <option value="REVERT_TO_SUSPICIOUS">↩️ Revertir a Sospechoso (Corregir Error)</option>
                             </select>
                           </div>
 
@@ -1034,13 +1085,20 @@ const ReviewDrawer = ({
                       </div>
 
                       {!esSoloLectura && (
-                        <button 
-                          onClick={guardarRevisionMasiva} 
-                          disabled={!comentario.trim() || (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType)}
-                          className={`w-full text-white font-bold py-3 rounded-lg shadow-md transition-all active:scale-95 text-sm md:text-base ${(!comentario.trim() || (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType)) ? 'bg-slate-300 cursor-not-allowed opacity-80' : isFraudCaseContext ? 'bg-red-600 hover:bg-red-700' : 'bg-power-purple hover:bg-power-purple/90'}`}
-                        >
-                          {isFraudCaseContext ? 'Cerrar Caso Definitivamente' : `Guardar y Resolver ${cantidadAlertasCliente} Alerta(s)`}
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button 
+                            onClick={guardarRevisionMasiva} 
+                            disabled={!comentario.trim() || (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType)}
+                            className={`w-full text-white font-bold py-3 rounded-lg shadow-md transition-all active:scale-95 text-sm md:text-base ${
+                               (!comentario.trim() || (isFraudCaseContext && nuevoEstado === 'CLOSED_CONFIRMED_FRAUD' && !fraudType)) ? 'bg-slate-300 cursor-not-allowed opacity-80' : 
+                               nuevoEstado === 'REVERT_TO_SUSPICIOUS' ? 'bg-amber-500 hover:bg-amber-600' :
+                               isFraudCaseContext ? 'bg-red-600 hover:bg-red-700' : 'bg-power-purple hover:bg-power-purple/90'
+                            }`}
+                          >
+                            {nuevoEstado === 'REVERT_TO_SUSPICIOUS' ? 'Confirmar Reversa a Sospechoso' :
+                             isFraudCaseContext ? 'Cerrar Caso Definitivamente' : `Guardar y Resolver ${cantidadAlertasCliente} Alerta(s)`}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1083,6 +1141,10 @@ const ReviewDrawer = ({
                     <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Telf / Celular:</span>
                     <span className="font-mono font-black text-slate-700">{rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile || 'No Detectado'}</span>
                  </div>
+                 <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Correo / Email:</span>
+                    <span className="font-mono font-black text-slate-700">{extraerCorreoUniversal(alertaActiva, payloadData) || 'No Detectado'}</span>
+                 </div>
               </div>
 
               {blacklistError && (
@@ -1109,7 +1171,7 @@ const ReviewDrawer = ({
                 </button>
                 <button 
                   onClick={handleSubmitToBlacklist}
-                  disabled={blacklistLoading || blacklistSuccess || (!alertaActiva?.dni && !rawTelefonoEncontrado && !payloadData?.document_number && !payloadData?.phone)}
+                  disabled={blacklistLoading || blacklistSuccess || (!alertaActiva?.dni && !rawTelefonoEncontrado && !payloadData?.document_number && !payloadData?.phone && !extraerCorreoUniversal(alertaActiva, payloadData))}
                   className="flex-[1.5] py-2.5 px-4 rounded-xl text-xs font-black bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-md transition-all active:scale-95"
                 >
                   {blacklistLoading ? (
@@ -1124,7 +1186,7 @@ const ReviewDrawer = ({
         </div>
       )}
 
-      {/* 🚀 MODAL: CONFIRMACIÓN PARA WHITELIST (REVERSA DE LISTA NEGRA) */}
+      {/* 🚀 MODAL: CONFIRMACIÓN PARA WHITELIST (REVERSA DE LISTA NEGRA Y REVERSA DE FRAUDE) */}
       {whitelistModalOpen && (
         <div className="fixed inset-0 bg-slate-900/90 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-700 transform scale-100 transition-transform">
@@ -1138,7 +1200,11 @@ const ReviewDrawer = ({
             
             <div className="p-5">
               <p className="text-sm text-slate-600 leading-relaxed font-medium mb-4">
-                Estás marcando este expediente como <span className="font-black text-emerald-600">Falso Positivo (Descartado)</span>. ¿Deseas remover las siguientes credenciales de las listas de bloqueo para evitar que el motor rechace futuras compras de este cliente?
+                {pendingReviewPayload?.is_revert ? (
+                  <>Estás devolviendo la alerta al estado <span className="font-black text-amber-600">Sospechoso</span> exitosamente. ¿Deseas retirar los datos de este cliente de las Listas Negras para evitar rebotes en el motor?</>
+                ) : (
+                  <>Estás marcando este expediente como <span className="font-black text-emerald-600">Falso Positivo (Descartado)</span>. ¿Deseas remover las siguientes credenciales de las listas de bloqueo para evitar que el motor rechace futuras compras de este cliente?</>
+                )}
               </p>
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3 mb-4 shadow-inner max-h-48 overflow-y-auto">
@@ -1178,7 +1244,7 @@ const ReviewDrawer = ({
                   disabled={whitelistLoading || whitelistSuccess}
                   className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-50"
                 >
-                  Omitir y Solo Cerrar Alerta
+                  Omitir y Solo Cerrar
                 </button>
                 <button 
                   onClick={handleSubmitToWhitelist}
@@ -1188,7 +1254,7 @@ const ReviewDrawer = ({
                   {whitelistLoading ? (
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                   ) : (
-                    'Liberar y Cerrar Alerta'
+                    'Limpiar Lista Negra'
                   )}
                 </button>
               </div>
