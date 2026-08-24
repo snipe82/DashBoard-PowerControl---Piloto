@@ -56,6 +56,13 @@ const RulesWorkflow = ({ onEditRule }) => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [expandedAudit, setExpandedAudit] = useState({});
 
+  // 🚀 NUEVOS ESTADOS: PROTOCOLO DE EMERGENCIA (FAST-TRACK)
+  const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
+  const [ruleForEmergency, setRuleForEmergency] = useState(null);
+  const [emergencyReason, setEmergencyReason] = useState('');
+  const [emergencyLoading, setEmergencyLoading] = useState(false);
+  const [emergencyError, setEmergencyError] = useState('');
+
   const leftScrollRef = useRef(null);
   const rightScrollRef = useRef(null);
   const isSyncingLeft = useRef(false);
@@ -396,6 +403,40 @@ const RulesWorkflow = ({ onEditRule }) => {
     }
   };
 
+  // 🚀 LÓGICA DE PASE POR EMERGENCIA (FAST-TRACK)
+  const handleOpenEmergency = (rule) => {
+    setRuleForEmergency(rule);
+    setEmergencyReason('');
+    setEmergencyError('');
+    setEmergencyModalOpen(true);
+  };
+
+  const handleEmergencyDeploy = async (e) => {
+    e.preventDefault();
+    if (!emergencyReason.trim()) {
+      setEmergencyError('Se requiere una justificación (emergency_reason) para autorizar este salto a producción.');
+      return;
+    }
+    setEmergencyLoading(true);
+    setEmergencyError('');
+    
+    try {
+      const payload = {
+        emergency_reason: emergencyReason,
+        version_number: ruleForEmergency.version_number
+      };
+      
+      await api.post(`/api/v1/rules/${ruleForEmergency.rule_code}/emergency-deploy`, payload);
+      setEmergencyModalOpen(false);
+      fetchRules();
+    } catch(err) {
+      const msg = err.response?.data?.error || err.response?.data?.message || 'Error desconocido al ejecutar el pase por emergencia.';
+      setEmergencyError(`ACCESO DENEGADO o ERROR: ${msg}`);
+    } finally {
+      setEmergencyLoading(false);
+    }
+  };
+
   const parseIncomingSql = (fullSql) => {
     if (!fullSql) return '';
     const lowerSql = fullSql.toLowerCase();
@@ -568,79 +609,92 @@ const RulesWorkflow = ({ onEditRule }) => {
           </div>
         )}
 
-        <div className="pt-3 border-t border-gray-100 flex justify-between items-center mt-auto">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${rule.is_active ? 'bg-emerald-500' : 'bg-rose-400'}`} title={rule.is_active ? 'Encendida' : 'Apagada'}></span>
-          
-          <div className="flex gap-1.5 items-center justify-end flex-wrap">
-            {stageKey === 'TESTING' && (
-              <>
-                <button 
-                  onClick={() => handleRequestApproval(rule)}
-                  className="text-[10px] font-bold text-orange-600 hover:text-white hover:bg-orange-500 bg-orange-500/10 px-2 py-1.5 rounded-lg transition-colors border border-orange-500/20 truncate"
-                  title="Solicitar Pase a Producción"
-                >
-                  ⏳ Aprobar
-                </button>
-                <button 
-                  onClick={() => handleOpenSimulate(rule)} 
-                  className="text-[10px] font-bold text-amber-600 hover:text-white hover:bg-amber-500 bg-amber-500/10 px-2 py-1.5 rounded-lg transition-colors border border-amber-500/20 truncate"
-                  title="Ejecutar Simulación en Backtesting"
-                >
-                  🧪 Simular
-                </button>
-              </>
-            )}
-
-            {stageKey === 'PENDING_APPROVAL' && (
-              <>
-                {(!rule.shadow_end_at || isShadowCompleted) && (
-                  <button 
-                    onClick={() => handleOpenShadow(rule)}
-                    className="text-[10px] font-bold text-slate-600 hover:text-white hover:bg-slate-700 bg-slate-100 px-2 py-1.5 rounded-lg transition-colors border border-slate-300 truncate"
-                  >
-                    🌑 {isShadowCompleted ? 'Reprogramar' : 'Sombra'}
-                  </button>
-                )}
-                
-                {rule.shadow_end_at && (
-                  <button 
-                    onClick={() => handleOpenShadowReport(rule)} 
-                    className="text-[10px] font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 px-2 py-1.5 rounded-lg transition-colors border border-blue-200 truncate"
-                    title="Ver reporte de Alertas Fantasma"
-                  >
-                    👀 Reporte
-                  </button>
-                )}
-
-                {isShadowInProgress && (
-                  <button 
-                    onClick={() => handleCancelShadow(rule)} 
-                    className="text-[10px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 bg-rose-50 px-2 py-1.5 rounded-lg transition-colors border border-rose-200 truncate"
-                    title="Abortar prueba en sombra"
-                  >
-                    🛑 Cancelar
-                  </button>
-                )}
-                
-                <button 
-                  onClick={() => handleMoveToStaged(rule)} 
-                  disabled={isShadowInProgress}
-                  className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors border truncate ${isShadowInProgress ? 'text-gray-400 bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' : 'text-emerald-600 hover:text-white hover:bg-emerald-50 bg-emerald-50 border-emerald-200'}`}
-                  title={isShadowInProgress ? 'La Sombra sigue activa' : 'Pasar a Staged'}
-                >
-                  🚀 Staged
-                </button>
-              </>
-            )}
+        <div className="pt-3 border-t border-gray-100 flex flex-col gap-2 mt-auto">
+          <div className="flex justify-between items-center w-full">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${rule.is_active ? 'bg-emerald-500' : 'bg-rose-400'}`} title={rule.is_active ? 'Encendida' : 'Apagada'}></span>
             
-            <button 
-              onClick={() => onEditRule({ ...rule, _fromWorkflow: true })} 
-              className="text-[10px] font-bold text-power-purple hover:text-white hover:bg-power-purple bg-power-purple/5 px-2 py-1.5 rounded-lg transition-colors border border-power-purple/20 truncate"
-              title="Abrir formulario y auditar SQL"
-            >
-              {rule.lifecycle_status === 'DEPLOYED' ? '👁️ Inspeccionar' : '✅ Auditar'}
-            </button>
+            <div className="flex gap-1.5 items-center justify-end flex-wrap">
+              {stageKey === 'TESTING' && (
+                <>
+                  <button 
+                    onClick={() => handleRequestApproval(rule)}
+                    className="text-[10px] font-bold text-orange-600 hover:text-white hover:bg-orange-500 bg-orange-500/10 px-2 py-1.5 rounded-lg transition-colors border border-orange-500/20 truncate"
+                    title="Solicitar Pase a Producción"
+                  >
+                    ⏳ Aprobar
+                  </button>
+                  <button 
+                    onClick={() => handleOpenSimulate(rule)} 
+                    className="text-[10px] font-bold text-amber-600 hover:text-white hover:bg-amber-500 bg-amber-500/10 px-2 py-1.5 rounded-lg transition-colors border border-amber-500/20 truncate"
+                    title="Ejecutar Simulación en Backtesting"
+                  >
+                    🧪 Simular
+                  </button>
+                </>
+              )}
+
+              {stageKey === 'PENDING_APPROVAL' && (
+                <>
+                  {(!rule.shadow_end_at || isShadowCompleted) && (
+                    <button 
+                      onClick={() => handleOpenShadow(rule)}
+                      className="text-[10px] font-bold text-slate-600 hover:text-white hover:bg-slate-700 bg-slate-100 px-2 py-1.5 rounded-lg transition-colors border border-slate-300 truncate"
+                    >
+                      🌑 {isShadowCompleted ? 'Reprogramar' : 'Sombra'}
+                    </button>
+                  )}
+                  
+                  {rule.shadow_end_at && (
+                    <button 
+                      onClick={() => handleOpenShadowReport(rule)} 
+                      className="text-[10px] font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 px-2 py-1.5 rounded-lg transition-colors border border-blue-200 truncate"
+                      title="Ver reporte de Alertas Fantasma"
+                    >
+                      👀 Reporte
+                    </button>
+                  )}
+
+                  {isShadowInProgress && (
+                    <button 
+                      onClick={() => handleCancelShadow(rule)} 
+                      className="text-[10px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 bg-rose-50 px-2 py-1.5 rounded-lg transition-colors border border-rose-200 truncate"
+                      title="Abortar prueba en sombra"
+                    >
+                      🛑 Cancelar
+                    </button>
+                  )}
+                  
+                  <button 
+                    onClick={() => handleMoveToStaged(rule)} 
+                    disabled={isShadowInProgress}
+                    className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors border truncate ${isShadowInProgress ? 'text-gray-400 bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' : 'text-emerald-600 hover:text-white hover:bg-emerald-50 bg-emerald-50 border-emerald-200'}`}
+                    title={isShadowInProgress ? 'La Sombra sigue activa' : 'Pasar a Staged'}
+                  >
+                    🚀 Staged
+                  </button>
+                </>
+              )}
+              
+              <button 
+                onClick={() => onEditRule({ ...rule, _fromWorkflow: true })} 
+                className="text-[10px] font-bold text-power-purple hover:text-white hover:bg-power-purple bg-power-purple/5 px-2 py-1.5 rounded-lg transition-colors border border-power-purple/20 truncate"
+                title="Abrir formulario y auditar SQL"
+              >
+                {rule.lifecycle_status === 'DEPLOYED' ? '👁️ Inspeccionar' : '✅ Auditar'}
+              </button>
+            </div>
           </div>
+          
+          {/* 🚀 BOTÓN DE PASE POR EMERGENCIA (SOLO PARA ADMINS/MANAGERS) */}
+          {isManager && stageKey !== 'DEPLOYED' && (
+            <button 
+              onClick={() => handleOpenEmergency(rule)}
+              className="mt-1 w-full text-[10px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200 py-1.5 rounded-lg transition-colors shadow-sm tracking-wide"
+              title="Saltar protocolo e inyectar en Producción Inmediatamente"
+            >
+              🚨 Pase de Emergencia
+            </button>
+          )}
         </div>
       </div>
     );
@@ -682,7 +736,6 @@ const RulesWorkflow = ({ onEditRule }) => {
       ) : (
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4 custom-scrollbar min-h-0 select-none">
           
-          {/* 🚀 CORRECCIÓN DE COLUMNAS: Asegurando anchos iguales (lg:flex-1 lg:min-w-[250px] shrink-0) */}
           <div className="w-[85vw] sm:w-[300px] lg:flex-1 lg:min-w-[250px] shrink-0 flex flex-col bg-slate-50 rounded-2xl border border-slate-200 h-full min-h-0">
             <div className="p-3 xl:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100/50 rounded-t-2xl shrink-0 gap-2">
               <h3 className="font-black text-slate-700 flex items-center gap-1.5 text-sm truncate">
@@ -792,6 +845,86 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
       )}
 
+      {/* 🚀 MODAL: PASE POR EMERGENCIA (FAST-TRACK) */}
+      {emergencyModalOpen && ruleForEmergency && (
+        <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[300] backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-rose-500 overflow-hidden">
+            <div className="bg-rose-600 p-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3 text-white">
+                <span className="text-3xl animate-pulse">🚨</span>
+                <div>
+                  <h3 className="text-lg font-black leading-tight">Pase por Emergencia</h3>
+                  <p className="text-[10px] font-mono tracking-widest uppercase opacity-90 mt-0.5">Protocolo Fast-Track</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setEmergencyModalOpen(false)} 
+                disabled={emergencyLoading}
+                className="text-white/80 hover:text-white hover:bg-rose-700 w-8 h-8 rounded-full flex items-center justify-center transition-colors font-bold"
+              >✕</button>
+            </div>
+            
+            <form onSubmit={handleEmergencyDeploy} className="p-5">
+              <p className="text-sm text-slate-700 font-medium mb-3">
+                Estás a punto de saltar el flujo de aprobación y enviar la regla <span className="font-black text-rose-600">{ruleForEmergency.rule_code} (v{ruleForEmergency.version_number})</span> directamente a Producción.
+              </p>
+              
+              <div className="bg-rose-50 border-l-4 border-rose-500 p-3 mb-4 rounded-r-lg">
+                <p className="text-xs text-rose-800 leading-relaxed font-bold">
+                  ⚠️ Esta acción sobrescribirá la vitrina operativa en milisegundos. Solo debe usarse para mitigar ataques de Día Cero.
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                  Justificación de la Emergencia (Obligatorio)
+                </label>
+                <textarea 
+                  value={emergencyReason}
+                  onChange={(e) => {
+                    setEmergencyReason(e.target.value);
+                    setEmergencyError('');
+                  }}
+                  rows="3" 
+                  placeholder="Ej: Incidencia Crítica #554: Se detectó ataque coordinado..."
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-rose-500 outline-none resize-none font-medium"
+                  required
+                ></textarea>
+              </div>
+
+              {emergencyError && (
+                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2.5 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm">
+                  <span className="text-sm mt-0.5">🛑</span> 
+                  <p>{emergencyError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setEmergencyModalOpen(false)} 
+                  disabled={emergencyLoading}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={emergencyLoading || !emergencyReason.trim()} 
+                  className="flex-[1.5] py-2.5 rounded-xl text-xs font-black bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-md transition-all active:scale-95"
+                >
+                  {emergencyLoading ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    'Inyectar en Producción'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 🚀 MODAL: HISTORIAL DE PASES A PRODUCCIÓN (AUDITORÍA AGRUPADA DEFENSIVA) */}
       {auditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
@@ -846,7 +979,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                                       </td>
                                       <td className="px-5 py-3.5">
                                           <p className="font-black text-power-blue uppercase tracking-tight">{log.deployment_code}</p>
-                                          {/* 🚀 Ocultamos las reglas en el subtítulo para forzar la apertura del detalle */}
                                           <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ID: {log.deployment_id}</p>
                                       </td>
                                       <td className="px-5 py-3.5 text-center">
@@ -862,7 +994,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                                       </td>
                                   </tr>
                                   
-                                  {/* 🚀 EL DETALLE OCULTO */}
                                   {expandedAudit[log.deployment_id || idx] && (
                                      <tr className="bg-slate-50/50">
                                        <td colSpan="5" className="px-5 py-3 border-t border-slate-100">
@@ -898,7 +1029,7 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
       )}
 
-      {/* MODALES DEL SISTEMA */}
+      {/* MODALES DEL SISTEMA (RESTANTES) */}
       
       {simModalOpen && ruleToSimulate && (
         <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[250] backdrop-blur-sm p-4 animate-fade-in">
@@ -1113,7 +1244,6 @@ const RulesWorkflow = ({ onEditRule }) => {
         </div>
       )}
 
-      {/* 🚀 MODAL DE REPORTE DE ALERTAS FANTASMA (EL VEREDICTO) */}
       {shadowReportOpen && ruleForReport && (
         <div className="fixed inset-0 bg-slate-900/90 flex items-center justify-center z-[250] backdrop-blur-sm p-4 animate-fade-in">
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-blue-200">
@@ -1204,7 +1334,6 @@ const RulesWorkflow = ({ onEditRule }) => {
                   )}
               </div>
 
-              {/* 🚀 ZONA DE VEREDICTO (Solo activa si la fecha ya pasó) */}
               <div className="bg-slate-50 p-4 border-t border-slate-200 shrink-0 flex flex-col sm:flex-row justify-between items-center gap-4">
                  {currentTime < new Date(ruleForReport.shadow_end_at) ? (
                     <div className="flex-1 flex items-center gap-2 text-amber-600 bg-amber-50 px-4 py-2.5 rounded-lg border border-amber-200 w-full">
@@ -1235,304 +1364,6 @@ const RulesWorkflow = ({ onEditRule }) => {
               </div>
 
            </div>
-        </div>
-      )}
-
-      {/* 🚀 MODAL DE RESTRICCIÓN DE NEGOCIO (HTTP 403 / 400) */}
-      {approvalErrorModal && (
-        <div className="fixed inset-0 bg-slate-900/60 z-[300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-orange-200 overflow-hidden transform scale-100 transition-transform">
-            <div className="bg-orange-50 px-5 py-4 border-b border-orange-100 flex items-center gap-3">
-              <span className="text-3xl">🛡️</span>
-              <div>
-                <h3 className="font-black text-orange-800 text-lg">Regla Bloqueada</h3>
-                <p className="text-orange-600/80 text-[10px] font-black uppercase tracking-widest">Restricción de Negocio CI/CD</p>
-              </div>
-            </div>
-            <div className="p-5">
-              <p className="text-slate-600 text-sm leading-relaxed">{approvalErrorModal}</p>
-              
-              <div className="mt-5 bg-slate-50 border border-slate-200 p-3 rounded-xl flex items-start gap-2 shadow-sm">
-                <span className="text-lg">💡</span>
-                <p className="text-xs text-slate-500">Sigue las instrucciones del mensaje para desbloquear esta regla y continuar con su ciclo life en el flujo de publicación.</p>
-              </div>
-            </div>
-            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-              <button 
-                onClick={() => setApprovalErrorModal(null)}
-                className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-2 px-6 rounded-xl shadow-md transition-colors active:scale-95"
-              >
-                Entendido
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🚀 MODAL: PROGRAMAR SHADOW MODE */}
-      {shadowModalOpen && ruleForShadow && (
-        <div className="fixed inset-0 bg-slate-900/80 z-[250] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 px-5 py-4 border-b border-slate-800 flex items-center gap-3">
-              <span className="text-2xl">🌑</span>
-              <div>
-                <h3 className="font-black text-white text-lg leading-tight">Shadow Mode (Sombra)</h3>
-                <p className="text-slate-400 text-[10px] font-mono mt-0.5">Programando: {ruleForShadow.rule_code}</p>
-              </div>
-            </div>
-            
-            <form onSubmit={handleScheduleShadow} className="p-5">
-              <p className="text-xs text-slate-600 mb-5 leading-relaxed">
-                Define el periodo en el que esta regla evaluará el tráfico en vivo (Champion-Challenger). Las alertas generadas no afectarán a los clientes. Mínimo 3 horas, máximo 168 horas (1 semana).
-              </p>
-
-              <div className="space-y-4">
-                 <div>
-                   <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">Fecha/Hora de Inicio</label>
-                   <input 
-                     type="datetime-local" 
-                     value={shadowParams.start_at} 
-                     onChange={e => setShadowParams({...shadowParams, start_at: e.target.value})} 
-                     required 
-                     className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 font-medium" 
-                   />
-                 </div>
-                 <div>
-                   <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">Fecha/Hora de Fin</label>
-                   <input 
-                     type="datetime-local" 
-                     value={shadowParams.end_at} 
-                     onChange={e => setShadowParams({...shadowParams, end_at: e.target.value})} 
-                     required 
-                     className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 font-medium" 
-                   />
-                 </div>
-              </div>
-
-              {shadowError && (
-                <div className="mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2.5 rounded-lg text-[11px] font-bold flex items-start gap-2 shadow-sm">
-                  <span className="text-sm mt-0.5">🛑</span> 
-                  <p>{shadowError}</p>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-6 mt-4 border-t border-slate-100">
-                <button 
-                  type="button" 
-                  onClick={() => setShadowModalOpen(false)} 
-                  disabled={shadowLoading}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={shadowLoading} 
-                  className="flex-[2] py-2.5 rounded-xl text-xs font-black bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-70 flex justify-center items-center gap-2 shadow-md transition-all active:scale-95"
-                >
-                  {shadowLoading ? 'Programando...' : 'Guardar Sombra'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE CONFIRMACIÓN DE DESPLIEGUE MASIVO CON AUDITORÍA */}
-      {deployModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/80 flex items-center justify-center z-[200] backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-3xl">🚀</span>
-              <div>
-                <h3 className="text-xl font-black text-slate-800">Confirmación de Pase a Producción</h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">Las siguientes reglas entrarán a operar en tráfico en vivo.</p>
-              </div>
-            </div>
-
-            {deployError && (
-              <div className="mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2.5 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm">
-                <span className="text-base mt-0.5">🛑</span> 
-                <p>{deployError}</p>
-              </div>
-            )}
-            
-            <div className="mt-5 mb-5 bg-slate-50 border border-slate-200 rounded-xl overflow-y-auto flex-1 custom-scrollbar">
-               <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-100/80 border-b border-slate-200 sticky top-0 z-10">
-                    <tr>
-                      <th className="px-4 py-2 text-[9px] font-black uppercase tracking-wider text-slate-500">Cód. Regla</th>
-                      <th className="px-4 py-2 text-[9px] font-black uppercase tracking-wider text-slate-500">Nombre Descriptivo</th>
-                      <th className="px-4 py-2 text-[9px] font-black uppercase tracking-wider text-slate-500 text-center">Versión a Subir</th>
-                      <th className="px-4 py-2 text-[9px] font-black uppercase tracking-wider text-slate-500 text-center">Auditoría</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                     {workflow.STAGED.map(rule => (
-                       <tr key={rule.rule_code} className="hover:bg-slate-100/50 transition-colors">
-                         <td className="px-4 py-3 text-xs font-mono font-bold text-power-purple">{rule.rule_code}</td>
-                         <td className="px-4 py-3 text-xs font-medium text-slate-700 truncate max-w-[180px]" title={rule.rule_name}>{rule.rule_name}</td>
-                         <td className="px-4 py-3 text-xs font-black text-slate-500 text-center">v{rule.version_number}</td>
-                         <td className="px-4 py-3 text-center">
-                           <button 
-                             onClick={() => handleOpenDiff(rule)}
-                             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition-all active:scale-95"
-                           >
-                             🔍 Ver Detalles
-                           </button>
-                         </td>
-                       </tr>
-                     ))}
-                  </tbody>
-               </table>
-            </div>
-
-            <div className="flex gap-3 pt-4 border-t border-slate-100 shrink-0">
-              <button 
-                type="button" 
-                onClick={() => setDeployModalOpen(false)} 
-                disabled={deploying}
-                className="flex-1 py-3 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button 
-                type="button" 
-                onClick={handleMassDeploy} 
-                disabled={deploying} 
-                className="flex-[2] py-3 rounded-xl text-xs font-black bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition-all shadow-md"
-              >
-                {deploying ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    <span>Procesando Despliegue...</span>
-                  </div>
-                ) : (
-                  `Confirmar Despliegue (${workflow.STAGED.length} reglas)`
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL INSPECTOR DE DIFERENCIAS */}
-      {diffModalOpen && selectedRuleForDiff && (
-        <div className="fixed inset-0 bg-slate-900/95 flex flex-col z-[210] animate-fade-in backdrop-blur-md">
-          <div className="p-4 flex justify-between items-center border-b border-slate-800 shrink-0 bg-slate-950">
-            <div>
-              <h2 className="text-xl font-black text-white flex items-center gap-2">
-                ⚖️ Auditoría de Cambios <span className="text-power-purple font-mono ml-2">{selectedRuleForDiff.rule_code}</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">Revisa el código exacto y las propiedades que entrarán a producción.</p>
-            </div>
-            <button onClick={() => setDiffModalOpen(false)} className="bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-400 px-5 py-2.5 rounded-lg font-bold text-sm border border-slate-700 transition-colors">
-              Volver al Resumen
-            </button>
-          </div>
-          
-          <div className="flex-1 flex overflow-hidden p-4 gap-4">
-            {loadingDiff ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-white">
-                <div className="w-12 h-12 border-4 border-power-purple/30 border-t-power-purple rounded-full animate-spin mb-4"></div>
-                <p className="font-bold text-sm text-slate-400">Analizando historial y extrayendo diferencias...</p>
-              </div>
-            ) : !prodVersionData ? (
-              
-              <div className="flex-1 flex flex-col rounded-xl overflow-hidden border border-emerald-500/50 shadow-2xl bg-slate-900 max-w-4xl mx-auto w-full">
-                <div className="bg-emerald-500/10 px-6 py-4 border-b border-emerald-500/30 flex justify-between items-center shrink-0">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">✨</span>
-                    <div>
-                      <h3 className="text-emerald-400 font-black text-base uppercase tracking-wider">REGLA COMPLETAMENTE NUEVA</h3>
-                      <p className="text-xs text-emerald-200/60 font-medium">Esta regla operará en tráfico vivo por primera vez.</p>
-                    </div>
-                  </div>
-                  <span className="bg-emerald-500 text-slate-900 font-black px-3 py-1 rounded-md text-xs">A DESPLEGAR (v{selectedRuleForDiff.version_number})</span>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-4 p-6 bg-slate-800/50 border-b border-slate-700 shrink-0">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Nombre Descriptivo</p>
-                    <p className="text-xs text-white font-bold bg-slate-800 px-3 py-2 rounded border border-slate-700 truncate" title={selectedRuleForDiff.rule_name}>{selectedRuleForDiff.rule_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Tipo de Evento</p>
-                    <p className="text-xs text-white font-mono font-bold bg-slate-800 px-3 py-2 rounded border border-slate-700 truncate">{selectedRuleForDiff.event_type}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Estado de Bloqueo</p>
-                    <p className={`text-xs font-bold px-3 py-2 rounded border truncate ${selectedRuleForDiff.is_active ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30'}`}>
-                      {selectedRuleForDiff.is_active ? '🟢 ENCENDIDA (Activa)' : '🔴 APAGADA (Ignorar)'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-auto bg-[#282c34] p-4">
-                   <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-3">Código SQL que se Inyectará:</p>
-                   <CodeMirror value={parseIncomingSql(selectedRuleForDiff.query_sql)} theme="dark" extensions={[sql()]} readOnly={true} editable={false} basicSetup={{ lineNumbers: true, foldGutter: false }} />
-                </div>
-              </div>
-
-            ) : (
-
-              <>
-                <div className="flex-1 flex flex-col rounded-xl overflow-hidden border border-slate-700 shadow-2xl relative">
-                  <div className="bg-slate-800 px-4 py-3 flex justify-between items-center border-b border-slate-900">
-                    <div>
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">🏛️ Actualmente en Producción</span>
-                      <span className="text-[10px] font-mono font-bold text-slate-500">Versión {prodVersionData.version_number}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-slate-800/50 p-4 grid grid-cols-2 gap-3 border-b border-slate-700 text-[11px] shrink-0">
-                    <div>
-                      <span className="text-slate-500 block mb-1 uppercase tracking-widest text-[9px] font-bold">Evento Asignado</span> 
-                      <span className="font-bold text-slate-300 px-1.5 py-0.5 rounded block truncate">{prodVersionData.event_type || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block mb-1 uppercase tracking-widest text-[9px] font-bold">Estado Actual</span> 
-                      <span className="font-bold text-slate-300 px-1.5 py-0.5 rounded block truncate">
-                        {(prodVersionData.is_active === true || prodVersionData.is_active === 'true') ? '🟢 Activa' : '🔴 Apagada'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar" ref={rightScrollRef} onScroll={handleScrollRight}>
-                    {prodSqlNodes}
-                  </div>
-                </div>
-
-                <div className="flex-1 flex flex-col rounded-xl overflow-hidden border border-power-purple/50 shadow-2xl relative">
-                  <div className="bg-power-purple/20 px-4 py-3 flex justify-between items-center border-b border-power-purple/30">
-                    <div>
-                      <span className="text-xs font-bold text-power-purple uppercase tracking-wider block">📦 Nueva Versión a Desplegar</span>
-                      <span className="text-[10px] font-mono font-bold text-power-purple/60">Versión {selectedRuleForDiff.version_number}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-power-purple/5 p-4 grid grid-cols-2 gap-3 border-b border-power-purple/20 text-[11px] shrink-0">
-                    <div>
-                      <span className="text-power-purple/60 block mb-1 uppercase tracking-widest text-[9px] font-bold">Nuevo Evento</span> 
-                      <span className={`font-bold px-1.5 py-0.5 rounded block truncate ${(selectedRuleForDiff.event_type !== prodVersionData.event_type) ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-inner' : 'text-slate-300'}`}>
-                        {selectedRuleForDiff.event_type || 'N/A'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-power-purple/60 block mb-1 uppercase tracking-widest text-[9px] font-bold">Nuevo Estado</span> 
-                      <span className={`font-bold px-1.5 py-0.5 rounded block truncate ${(String(selectedRuleForDiff.is_active) !== String(prodVersionData.is_active)) ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-inner' : 'text-slate-300'}`}>
-                        {(selectedRuleForDiff.is_active === true || selectedRuleForDiff.is_active === 'true') ? '🟢 Activa' : '🔴 Apagada'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar" ref={leftScrollRef} onScroll={handleScrollLeft}>
-                    {stagedSqlNodes}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
         </div>
       )}
 

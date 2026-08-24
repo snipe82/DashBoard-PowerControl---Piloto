@@ -384,6 +384,20 @@ app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
+// 🚀 NUEVA RUTA PROXY: Pase por Emergencia (Fast-Track)
+app.post('/api/v1/rules/:ruleCode/emergency-deploy', async (req, res) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/emergency-deploy`, {
+            method: 'POST',
+            headers: getHeaders(req),
+            body: JSON.stringify(req.body)
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) {
+        res.status(503).json({ error: 'Motor no disponible para pase de emergencia.' });
+    }
+});
+
 // ==========================================
 // 🔎 5. MÓDULO: BUSCADOR DE EVENTOS
 // ==========================================

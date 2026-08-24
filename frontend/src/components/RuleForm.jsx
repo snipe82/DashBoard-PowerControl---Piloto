@@ -99,6 +99,15 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
     return fullSql.trim(); 
   };
 
+  // 🚀 CORE FIX: Parseador de Booleanos a prueba de fallos
+  const parseBooleanSafely = (val) => {
+    if (val === undefined || val === null) return true;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'string') return val.trim().toLowerCase() === 'true';
+    if (typeof val === 'number') return val === 1;
+    return true;
+  };
+
   const normalizeMetadata = (data) => {
     let evType = data.event_type || 'FullApplicationRT';
     if (evType.toLowerCase() === 'fullapplicationnrt') evType = 'FullApplicationNRT';
@@ -115,7 +124,7 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
       lifecycle_status: (data.lifecycle_status || 'DRAFT').toUpperCase(),
       version_number: data.version_number || 1,
       is_production: !!data.is_production,
-      is_active: data.is_active !== undefined ? !!data.is_active : true,
+      is_active: parseBooleanSafely(data.is_active),
       version_comment: data.version_comment || ''
     };
   };
@@ -197,15 +206,19 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
     return (str || '').trim().replace(/\s+/g, ' ');
   };
 
-  const hasChanges = 
-    formData.rule_code !== originalData.rule_code ||
-    formData.rule_name !== originalData.rule_name ||
-    formData.description !== originalData.description || 
-    formData.entity_type !== originalData.entity_type ||
-    formData.event_type !== originalData.event_type ||
-    formData.severity !== originalData.severity ||
-    formData.is_active !== originalData.is_active ||
-    cleanSqlForCompare(editableSql) !== cleanSqlForCompare(originalSql);
+  // 🚀 CORE FIX: Comparación blindada convirtiendo todo a String para evitar colisiones falso-positivo
+  const hasChanges = useMemo(() => {
+    return (
+      String(formData.rule_code).trim() !== String(originalData.rule_code).trim() ||
+      String(formData.rule_name).trim() !== String(originalData.rule_name).trim() ||
+      String(formData.description).trim() !== String(originalData.description).trim() || 
+      String(formData.entity_type).trim() !== String(originalData.entity_type).trim() ||
+      String(formData.event_type).trim() !== String(originalData.event_type).trim() ||
+      String(formData.severity).trim() !== String(originalData.severity).trim() ||
+      String(formData.is_active) !== String(originalData.is_active) ||
+      cleanSqlForCompare(editableSql) !== cleanSqlForCompare(originalSql)
+    );
+  }, [formData, originalData, editableSql, originalSql]);
 
   const handleCancelProtected = () => {
     if (hasChanges) {
@@ -229,8 +242,8 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
       entity_type: formData.entity_type,
       event_type: formData.event_type,
       severity: formData.severity,
-      is_active: Boolean(formData.is_active),
-      blocks_operation: Boolean(formData.is_active),
+      is_active: parseBooleanSafely(formData.is_active),
+      blocks_operation: parseBooleanSafely(formData.is_active),
       query_sql: completeSql, 
       version_comment: commentText
     };
@@ -249,7 +262,7 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
             entity_type: formData.entity_type,
             event_type: formData.event_type,
             severity: formData.severity,
-            is_active: Boolean(formData.is_active)
+            is_active: parseBooleanSafely(formData.is_active)
           };
           await api.post(`/api/v1/rules`, masterPayload);
         } catch (e) {
@@ -301,7 +314,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
     }
   };
 
-  // 🚀 FUNCIÓN RENOMBRADA CORRECTAMENTE A handleSaveRequest Y RECIBIENDO EL MODO
   const handleSaveRequest = (requestedMode) => {
     setErrorBackend('');
     setSuccessMessage('');
@@ -319,7 +331,9 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
       return;
     }
 
-    if (!hasChanges) {
+    // 🚀 BYPASS DE VERSIÓN: Permitir "Nueva Versión" incluso sin cambios. 
+    // Solo bloquea si intentan sobreescribir algo que no ha cambiado.
+    if (!hasChanges && requestedMode === 'overwrite') {
       setErrorBackend('🛑 Operación denegada: No se detectaron modificaciones en los metadatos o en la consulta SQL respecto a la versión base.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -428,7 +442,7 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
       formData.severity === (normalizedItem.severity || formData.severity) &&
       formData.entity_type === (normalizedItem.entity_type || formData.entity_type) &&
       formData.event_type === (normalizedItem.event_type || formData.event_type) &&
-      formData.is_active === (normalizedItem.is_active !== undefined ? !!normalizedItem.is_active : formData.is_active) &&
+      String(formData.is_active) === String(normalizedItem.is_active !== undefined ? parseBooleanSafely(normalizedItem.is_active) : parseBooleanSafely(formData.is_active)) &&
       cleanSqlForCompare(editableSql) === cleanSqlForCompare(parsedSql)
     );
   };
@@ -700,7 +714,12 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
             <select 
               name="is_active" 
               value={formData.is_active ? "true" : "false"} 
-              onChange={(e) => { setFormData({ ...formData, is_active: e.target.value === "true" }); setErrorBackend(''); setSuccessMessage(''); }} 
+              onChange={(e) => { 
+                  // 🚀 Parche: Forzamos la actualización booleana estricta al cambiar el dropdown
+                  setFormData({ ...formData, is_active: e.target.value === "true" }); 
+                  setErrorBackend(''); 
+                  setSuccessMessage(''); 
+              }} 
               disabled={formDisabled} 
               className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-power-purple outline-none font-bold text-slate-700 disabled:bg-slate-50 disabled:text-gray-500 disabled:opacity-100 cursor-auto"
             >
@@ -756,7 +775,7 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
               </button>
             )}
 
-            {/* 🚀 EL BOTÓN AHORA LLAMA A handleSaveRequest('new_version') CORRECTAMENTE */}
+            {/* 🚀 BOTÓN NUEVA VERSIÓN SIEMPRE ACTIVO EN DRAFT */}
             {statusUpper === 'DRAFT' && isEditMode && (
               <button 
                 type="button" 
@@ -771,7 +790,7 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
               </button>
             )}
             
-            {/* 🚀 EL BOTÓN PRINCIPAL TAMBIÉN */}
+            {/* 🚀 BOTÓN PRINCIPAL: SI NO HAY CAMBIOS, ES GRIS; PERO SI FORZASTE NUEVA VERSÓN ARRIBA, PASA LA VALIDACIÓN */}
             <button 
               type="button" 
               onClick={() => handleSaveRequest(isCurrentVersionDeployed ? 'new_version' : 'overwrite')} 
@@ -780,7 +799,7 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
                   ? 'bg-slate-300 text-slate-500 cursor-pointer opacity-80'
                   : hasChanges 
                     ? 'bg-power-purple text-white hover:bg-power-purple/90 active:scale-95' 
-                    : 'bg-slate-200 text-slate-400 shadow-none cursor-not-allowed'
+                    : 'bg-slate-200 text-slate-400 shadow-none hover:bg-slate-300 active:scale-95'
               }`}
             >
               💾 {isCurrentVersionDeployed 
@@ -998,7 +1017,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
                 })}
               </div>
 
-              {/* RENDERIZADOR DE LÍNEAS DE SQL ACTUAL (NUEVO / IZQUIERDA) */}
               <div 
                 className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar"
                 ref={leftScrollRef} 
@@ -1039,7 +1057,6 @@ const RuleForm = ({ ruleToEdit, onCancel, onSuccess }) => {
                 })}
               </div>
 
-              {/* RENDERIZADOR DE LÍNEAS DE SQL HISTÓRICO (VIEJO / DERECHA) */}
               <div 
                 className="flex-1 bg-slate-950 overflow-auto py-2 custom-scrollbar"
                 ref={rightScrollRef} 
