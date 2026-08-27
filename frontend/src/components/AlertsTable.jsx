@@ -2,6 +2,23 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import api from '../api'; 
 
+// 🚀 EXTRAE MONTO DE FORMA SEGURA
+const extractAmount = (m) => {
+  if (m === null || m === undefined) return 0;
+  if (typeof m === 'object') return parseFloat(m.value || m.amount || m.basevalue || 0);
+  return parseFloat(m || 0);
+};
+
+// 🚀 EXTRAE MONEDA DE FORMA DINÁMICA
+const extractCurrency = (m) => {
+  if (m === null || m === undefined) return 'S/';
+  if (typeof m === 'object') {
+    const curr = String(m.currency || m.basecurrency || m.moneda || '').toUpperCase();
+    if (curr === 'USD' || curr === 'UDS') return '$';
+  }
+  return 'S/';
+};
+
 const MiniAlertTooltip = ({ entityId, idx, vistaActual, subTabFraud }) => {
   const [alertas, setAlertas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -16,7 +33,6 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual, subTabFraud }) => {
     let targetStatus = vistaActual;
     let extraParam = '';
     
-    // 🚀 RUTEO DINÁMICO PARA SUBBANDEJAS DE FRAUDE
     if (vistaActual === 'FRAUD') {
       if (subTabFraud === 'PENDING') {
         targetStatus = 'FRAUD';
@@ -37,7 +53,6 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual, subTabFraud }) => {
         const data = res.data;
         const arr = data.data || (Array.isArray(data) ? data : []);
         
-        // Confiamos en el Backend, solo validamos status base y ordenamos
         const alertsFiltered = arr.filter(al => !al.status || !al.estado || String(al.status || al.estado).toUpperCase() === String(targetStatus).toUpperCase());
         alertsFiltered.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         
@@ -60,17 +75,22 @@ const MiniAlertTooltip = ({ entityId, idx, vistaActual, subTabFraud }) => {
       <h4 className="font-bold border-b border-slate-700 pb-2 mb-3 text-white uppercase tracking-widest text-xs md:text-sm">Vista Previa de Alertas</h4>
       {cargando ? <p className="text-slate-100 italic text-center py-4 text-xs animate-pulse">Cargando detalle...</p> : alertas.length === 0 ? <p className="text-slate-100 text-center py-3 text-xs">No hay detalle disponible para este estado</p> : (
         <ul className="space-y-2.5">
-          {alertas.map((al, i) => (
-            <li key={i} className="bg-slate-800 p-2.5 md:p-3 rounded-lg border border-slate-700/50 flex flex-col">
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="font-mono text-[10px] md:text-sm text-red-200 bg-red-900/40 px-2 py-0.5 rounded border border-red-400/20 truncate max-w-[120px]" title={al.codigoregla}>{al.codigoregla}</span>
-                {/* 🚀 CORRECCIÓN: Extracción dinámica del importe para el tooltip */}
-                <span className="font-bold text-emerald-400 text-xs md:text-sm">S/ {parseFloat(al.importe || al.monto || al.amount || 0).toFixed(2)}</span>
-              </div>
-              <p className="text-xs md:text-sm text-slate-50 font-medium mb-1.5 whitespace-normal">{al.regla || 'Alerta de riesgo'}</p>
-              <div className="flex justify-between items-center text-[10px] text-slate-200"><span>{al.event_type || 'Transacción'}</span><span>{new Date(al.fecha).toLocaleString()}</span></div>
-            </li>
-          ))}
+          {alertas.map((al, i) => {
+            const montoObj = al.importe || al.monto || al.amount;
+            return (
+              <li key={i} className="bg-slate-800 p-2.5 md:p-3 rounded-lg border border-slate-700/50 flex flex-col">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="font-mono text-[10px] md:text-sm text-red-200 bg-red-900/40 px-2 py-0.5 rounded border border-red-400/20 truncate max-w-[120px]" title={al.codigoregla}>{al.codigoregla}</span>
+                  {/* 🚀 Renderizado dinámico de la moneda */}
+                  <span className="font-bold text-emerald-400 text-xs md:text-sm">
+                    {extractCurrency(montoObj)} {extractAmount(montoObj).toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-xs md:text-sm text-slate-50 font-medium mb-1.5 whitespace-normal">{al.regla || 'Alerta de riesgo'}</p>
+                <div className="flex justify-between items-center text-[10px] text-slate-200"><span>{al.event_type || 'Transacción'}</span><span>{new Date(al.fecha).toLocaleString()}</span></div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -85,7 +105,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   const [hoveredEntityId, setHoveredEntityId] = useState(null);
   const [inputPagina, setInputPagina] = useState("1");
   
-  // 🚀 ESTADO PARA LAS SUBBANDEJAS DE FRAUDE
   const [subTabFraud, setSubTabFraud] = useState('PENDING'); 
   
   const pageSize = 20;
@@ -93,7 +112,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
   const userSession = JSON.parse(localStorage.getItem('user') || '{}');
   const miUsuarioActual = userSession.email || userSession.username || "analista@powerpay.pe";
 
-  // Reseteos
   useEffect(() => { 
     setPaginaActual(1); 
     if (vistaActual !== 'FRAUD') setSubTabFraud('PENDING'); 
@@ -112,7 +130,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
       const hayBusqueda = textoBusqueda !== '';
       const esUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i.test(textoBusqueda);
 
-      // 🚀 RUTEO DINÁMICO
       let targetStatus = vistaActual;
       let fraudTypeParam = '';
 
@@ -142,7 +159,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           const data = res.data;
           let arrData = Array.isArray(data) ? data : (data?.data || (data && typeof data === 'object' && data.alert_id ? [data] : []));
 
-          // 🛡️ Filtro Base: Validamos que el status coincida con la bandeja principal
           arrData = arrData.filter(item => !item.status || !item.estado || String(item.status || item.estado).toUpperCase() === String(targetStatus).toUpperCase());
 
           const resolveEntityId = (item) => {
@@ -156,16 +172,16 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
           };
 
           const agrupado = {};
-          const txProcesadas = {}; // 🛡️ NUEVO: Memoria para evitar Double-Counting por transacción
+          const txProcesadas = {}; 
 
           arrData.forEach(item => {
             const id = resolveEntityId(item);
-            
-            // 🚀 NUEVO: Llave única de la transacción (application_id o fallback)
             const txKey = item.application_id || item.operacion_id || item.id_transaccion || item.transaction_id || `${item.fecha}_${item.monto}`;
             
-            // Leemos los campos del backend
-            const valorOperacion = parseFloat(item.monto_total_riesgo || item.importe || item.monto || item.amount || 0);
+            // 🚀 Extracción robusta de Moneda y Monto
+            const montoObj = item.monto_total_riesgo || item.importe || item.monto || item.amount;
+            const valorOperacion = extractAmount(montoObj);
+            const currencySym = extractCurrency(montoObj);
             const cantidadAlertas = parseInt(item.total_alertas || 1, 10);
 
             if (!txProcesadas[id]) txProcesadas[id] = new Set();
@@ -176,18 +192,19 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                 id_agrupacion: id, 
                 total_alertas: cantidadAlertas,
                 monto_total_riesgo: valorOperacion,
+                currency_symbol: currencySym,
                 locked_by: item.locked_by || null,
                 locked_at: item.locked_at || null,
                 fraud_type: item.fraud_type || null
               };
               txProcesadas[id].add(txKey);
             } else {
-              // Si llegan múltiples registros, siempre sumamos el contador visual de alertas
               agrupado[id].total_alertas += cantidadAlertas;
               
-              // 🛡️ MAGIA MATEMÁTICA: Solo sumamos dinero si esta transacción NO ha sido contada para este cliente
               if (!txProcesadas[id].has(txKey)) {
                   agrupado[id].monto_total_riesgo += valorOperacion;
+                  // Si encuentra un USD, la entidad pasa a representarse en USD para evitar confusión
+                  if (currencySym === '$') agrupado[id].currency_symbol = '$';
                   txProcesadas[id].add(txKey);
               }
               
@@ -244,7 +261,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
     <div className="p-3 md:p-8 animate-fade-in h-full flex flex-col">
       <div className="bg-white md:rounded-2xl shadow-sm md:border border-gray-100 overflow-visible flex-1 flex flex-col">
         
-        {/* 🚀 SUB-NAVEGACIÓN (SOLO PARA LA VISTA DE FRAUDE) */}
         {vistaActual === 'FRAUD' && (
           <div className="bg-white border-b border-gray-100 p-2 md:p-4 rounded-t-2xl shrink-0 flex gap-2 overflow-x-auto custom-scrollbar">
             <button 
@@ -297,7 +313,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                         <div className="flex items-center gap-2 flex-wrap">
                           <span>{entidad.cliente || entidad.full_name || 'No registrado'}</span>
                           
-                          {/* 🚀 BADGE VISUAL DE TIPIFICACIÓN DE FRAUDE */}
                           {entidad.fraud_type && (
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shadow-xs uppercase tracking-tight ${
                               entidad.fraud_type === 'FRAUD_FRUSTRATED' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
@@ -326,7 +341,10 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                           {hoveredEntityId === idEntidadFinal && <MiniAlertTooltip entityId={idEntidadFinal} idx={idx} vistaActual={vistaActual} subTabFraud={subTabFraud} />}
                         </div>
                       </td>
-                      <td className="px-6 py-4 font-black text-power-purple text-right text-base">S/ {parseFloat(entidad.monto_total_riesgo || entidad.monto || 0).toFixed(2)}</td>
+                      {/* 🚀 Renderizado dinámico de la moneda en el Acumulado */}
+                      <td className="px-6 py-4 font-black text-power-purple text-right text-base">
+                        {entidad.currency_symbol || 'S/'} {parseFloat(entidad.monto_total_riesgo || entidad.monto || 0).toFixed(2)}
+                      </td>
                       <td className="px-6 py-4 text-right">
                         <button className="text-power-purple font-bold hover:underline opacity-80 hover:opacity-100 transition-opacity bg-power-purple/10 px-4 py-2 rounded-lg disabled:opacity-50"
                           disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
@@ -347,7 +365,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
              entidades.length === 0 ? <p className="text-center py-12 text-gray-500 italic">No se encontraron casos en esta bandeja.</p> : 
              entidades.map((entidad, idx) => {
                 const idEntidadFinal = entidad.id_agrupacion || 'ID_ERROR';
-                
                 const lockedByClean = String(entidad.locked_by || '').trim().toLowerCase();
                 const miUsuarioClean = String(miUsuarioActual || '').trim().toLowerCase();
                 const isLockedBySomeoneElse = entidad.locked_by !== null && lockedByClean !== miUsuarioClean;
@@ -365,7 +382,6 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       <h3 className="font-bold text-gray-800 text-base leading-tight flex items-center gap-2 flex-wrap">
                         <span>{entidad.cliente || 'No registrado'}</span>
                         
-                        {/* 🚀 BADGE CONDICIONAL MÓVIL */}
                         {entidad.fraud_type && (
                           <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shadow-xs uppercase tracking-tight ${
                             entidad.fraud_type === 'FRAUD_FRUSTRATED' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
@@ -388,7 +404,13 @@ const AlertsTable = ({ vistaActual, onAbrirRevision, filtros, refreshTrigger }) 
                       <p className="text-xs text-gray-400 mt-0.5">Doc: {entidad.dni || idEntidadFinal}</p>
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
-                      <div><p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Riesgo Total</p><p className="font-black text-power-purple text-lg">S/ {parseFloat(entidad.monto_total_riesgo || 0).toFixed(2)}</p></div>
+                      <div>
+                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Riesgo Total</p>
+                         {/* 🚀 Renderizado dinámico de la moneda Móvil */}
+                         <p className="font-black text-power-purple text-lg">
+                           {entidad.currency_symbol || 'S/'} {parseFloat(entidad.monto_total_riesgo || 0).toFixed(2)}
+                         </p>
+                      </div>
                       <button className="bg-power-purple text-white font-bold px-4 py-2.5 rounded-lg text-xs shadow-md active:scale-95 transition-transform disabled:opacity-50"
                         disabled={!idEntidadFinal || idEntidadFinal === 'ID_ERROR'}
                         onClick={(e) => {

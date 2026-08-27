@@ -29,13 +29,23 @@ const safeString = (val, fallback = '—') => {
   return String(val);
 };
 
+// 🚀 EXTRAE MONTO DE FORMA SEGURA
 const extractAmount = (m) => {
   if (m === null || m === undefined) return 0;
   if (typeof m === 'object') return parseFloat(m.value || m.amount || m.basevalue || 0);
   return parseFloat(m || 0);
 };
 
-// 🚀 ESCÁNER PROFUNDO DE CORREOS
+// 🚀 EXTRAE MONEDA DE FORMA DINÁMICA
+const extractCurrency = (m) => {
+  if (m === null || m === undefined) return 'S/';
+  if (typeof m === 'object') {
+    const curr = String(m.currency || m.basecurrency || m.moneda || '').toUpperCase();
+    if (curr === 'USD' || curr === 'UDS') return '$';
+  }
+  return 'S/';
+};
+
 const extraerCorreoUniversal = (alerta, payload) => {
   let email = alerta?.email || alerta?.correo || payload?.email || payload?.correo || payload?.emailAddress || payload?.customer_email || payload?.customer?.email || payload?.client?.email || payload?.user?.email || payload?.buyer?.email;
   if (!email && payload) {
@@ -101,7 +111,6 @@ const ReviewDrawer = ({
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
   const [whitelistItems, setWhitelistItems] = useState([]);
 
-  // 🚀 ESTADOS PARA REVERSIÓN DE FRAUDE A SOSPECHOSO
   const [revertModalOpen, setRevertModalOpen] = useState(false);
   const [revertComment, setRevertComment] = useState('');
   const [revertLoading, setRevertLoading] = useState(false);
@@ -210,6 +219,7 @@ const ReviewDrawer = ({
 
             const txProcesadas = new Set();
             let totalMontoReal = 0;
+            let currentCurrency = 'S/';
 
             sortedAlerts.forEach(al => {
               const fechaCorta = al.fecha ? new Date(al.fecha).toLocaleDateString() : '0';
@@ -222,6 +232,8 @@ const ReviewDrawer = ({
                 txProcesadas.add(txKey);
                 totalMontoReal += montoDeduplicacion;
               }
+              
+              if (extractCurrency(al.monto) === '$') currentCurrency = '$';
             });
 
             const primeraCompra = (rawMetadata && rawMetadata.fecha_primera_alerta) || primero.fecha_primera_alerta || ultimo.fecha;
@@ -236,6 +248,7 @@ const ReviewDrawer = ({
               id_label: 'Código de Entidad',
               id_value: idEntidadFinal,
               monto_total: totalMontoReal,
+              currency_symbol: currentCurrency,
               codigo_entidad: idEntidadFinal,
               tipo_evento: primero.event_type || primero.tipo_evento || '—',
               entidad_nombre: primero.entidad || '—',
@@ -445,11 +458,9 @@ const ReviewDrawer = ({
             setTimeout(() => { recargarTabla(); }, 800);
           }
         } else {
-          // 🚀 CORRECCIÓN DEFINITIVA: ENRUTAMIENTO ESTRICTO SIN EL PREFIJO /V1/
           let reviewUrl = '';
           
           if (reviewBody.is_revert) {
-             // El proxy espera "/api/alerts/:id/review", NO "/api/v1/alerts..."
              reviewUrl = `/api/alerts/${alertaActiva.alert_id}/review`;
           } else {
              const cleanIdParaRuta = String(reviewBody.dni_rut_id).trim();
@@ -470,7 +481,6 @@ const ReviewDrawer = ({
           if (res.status === 200 || res.status === 201) {
             seGuardoExitosamenteRef.current = true;
             
-            // Si es un rescate, retornamos true para que siga el flujo y limpie la Lista Negra
             if (reviewBody.is_revert) return true;
 
             if (haySiguiente && onSiguiente) onSiguiente();
@@ -490,6 +500,63 @@ const ReviewDrawer = ({
         
         return false;
       }
+  };
+
+  const ejecutarReversaASospechoso = async () => {
+    setRevertError('');
+    if (!revertComment.trim()) {
+        setRevertError('Debe ingresar un comentario justificando la reversión del caso.');
+        return;
+    }
+    setRevertLoading(true);
+
+    try {
+        const userSession = JSON.parse(localStorage.getItem('user') || '{}');
+        const analistaResponsable = userSession.email || userSession.username || "analista@powerpay.pe";
+
+        const reviewUrl = `/api/alerts/${alertaActiva.alert_id}/review`;
+        
+        const body = {
+          status: 'SUSPICIOUS',
+          reviewer_id: analistaResponsable,
+          review_comment: revertComment
+        };
+        
+        const res = await api.patch(reviewUrl, body);
+        
+        if (res.status === 200 || res.status === 201) {
+            seGuardoExitosamenteRef.current = true;
+            setRevertModalOpen(false);
+            setRevertLoading(false);
+            
+            setPendingReviewPayload(null); 
+            setWhitelistError('');
+            setWhitelistSuccess('');
+            
+            const dniValue = alertaActiva?.dni || alertaActiva?.document_number || payloadData?.document_number;
+            const phoneValue = rawTelefonoEncontrado || payloadData?.telephonenumber || payloadData?.phone || payloadData?.mobile;
+            const emailValue = extraerCorreoUniversal(alertaActiva, payloadData);
+            
+            const items = [];
+            if (dniValue) items.push({ list_id: 'DNI', value: dniValue, checked: true });
+            if (emailValue) items.push({ list_id: 'EMAIL', value: emailValue, checked: true });
+            if (phoneValue) items.push({ list_id: 'USER_PHONE', value: phoneValue, checked: true });
+            
+            if (items.length > 0) {
+                setWhitelistItems(items);
+                setWhitelistModalOpen(true);
+            } else {
+                onClose();
+                setTimeout(() => { recargarTabla(); }, 800);
+            }
+        }
+    } catch (e) {
+        console.error("🚨 DEBUG ERROR REVERSA:", e.response?.data);
+        const status = e.response?.status;
+        let msg = e.response?.data?.message || e.response?.data?.error || "Error de red al intentar revertir el estado.";
+        setRevertError(msg);
+        setRevertLoading(false);
+    }
   };
 
   const guardarRevisionMasiva = async () => {
@@ -831,7 +898,8 @@ const ReviewDrawer = ({
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase font-bold">Riesgo Acumulado</p>
-                      <p className="font-bold text-red-600 text-lg mt-0.5">S/ {extractAmount(info.monto_total).toFixed(2)}</p>
+                      {/* 🚀 Renderizado dinámico de la moneda en la Cabecera */}
+                      <p className="font-bold text-red-600 text-lg mt-0.5">{info.currency_symbol || 'S/'} {extractAmount(info.monto_total).toFixed(2)}</p>
                     </div>
                   </div>
 
@@ -902,7 +970,8 @@ const ReviewDrawer = ({
                                  </div>
                                </div>
                                <div className="text-right shrink-0 ml-2">
-                                 <span className="font-black text-gray-800 text-sm md:text-base block leading-tight">S/ {extractAmount(al.monto).toFixed(2)}</span>
+                                 {/* 🚀 Renderizado dinámico de la moneda en la Alerta */}
+                                 <span className="font-black text-gray-800 text-sm md:text-base block leading-tight">{extractCurrency(al.monto)} {extractAmount(al.monto).toFixed(2)}</span>
                                  <span className="block text-[9px] md:text-[10px] text-slate-400 truncate max-w-[90px] md:max-w-[120px]" title={safeString(al.event_type)}>{safeString(al.event_type)}</span>
                                </div>
                              </div>
@@ -968,21 +1037,23 @@ const ReviewDrawer = ({
                   </div>
 
                   <div ref={formDictamenRef} className="bg-white p-4 rounded-xl border border-gray-200 scroll-mt-6 shadow-sm">
-                    <h4 className="font-bold text-sm mb-4 uppercase text-gray-500 tracking-wider">Dictamen Final del Caso</h4>
                     
-                    {/* 🚀 INYECCIÓN DE ADVERTENCIA PARA REVERSIÓN DE FRAUDE */}
-                    {nuevoEstado === 'REVERT_TO_SUSPICIOUS' && (
-                      <div className="animate-fade-in mb-4 bg-amber-50 border border-amber-200 p-3 rounded-xl shadow-sm">
-                         <div className="flex items-start gap-2">
-                           <span className="text-xl">⚠️</span>
-                           <div>
-                             <p className="text-xs font-bold text-rose-600 mb-1">Atención: Has seleccionado revertir la decisión.</p>
-                             <p className="text-[10px] text-amber-800 font-medium">Esta acción requiere justificación y te permitirá limpiar la Lista Negra en el siguiente paso para evitar bloqueos innecesarios.</p>
-                           </div>
-                         </div>
-                      </div>
-                    )}
-
+                    <div className="flex flex-wrap justify-between items-center mb-4 gap-2 border-b border-gray-100 pb-3">
+                      <h4 className="font-bold text-sm uppercase text-gray-500 tracking-wider">Dictamen Final del Caso</h4>
+                      {isFraudCaseContext && !esSoloLectura && (
+                         <button 
+                           onClick={() => {
+                               setRevertModalOpen(true);
+                               setRevertComment('');
+                               setRevertError('');
+                           }}
+                           className="text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 font-bold px-4 py-2 rounded-lg transition-all active:scale-95 text-xs flex items-center gap-2 shadow-sm"
+                         >
+                           <span className="text-base">↩️</span> Revertir a Sospechoso (Corregir)
+                         </button>
+                      )}
+                    </div>
+                    
                     {errorDictamen && (
                       <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-xs font-bold animate-fade-in flex items-start gap-2 shadow-sm overflow-x-auto">
                         <span className="text-sm mt-0.5">🛑</span> 
@@ -995,7 +1066,6 @@ const ReviewDrawer = ({
                         <>
                           <div className="bg-red-50/50 border border-red-100 p-3 rounded-xl shadow-sm mb-2">
                             <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5 text-red-800">Resolución del Caso (Obligatorio):</label>
-                            {/* 🚀 NUEVA OPCIÓN AÑADIDA DIRECTAMENTE EN EL SELECT DROPDOWN */}
                             <select 
                               value={esSoloLectura ? 'CLOSED_FALSE_POSITIVE' : nuevoEstado} 
                               onChange={(e) => {
@@ -1008,7 +1078,6 @@ const ReviewDrawer = ({
                             >
                               <option value="CLOSED_CONFIRMED_FRAUD">🚨 Cerrar como Fraude Confirmado</option>
                               <option value="CLOSED_FALSE_POSITIVE">✅ Cerrar como Falso Positivo</option>
-                              <option value="REVERT_TO_SUSPICIOUS">↩️ Revertir a Sospechoso (Corregir Error)</option>
                             </select>
                           </div>
 
