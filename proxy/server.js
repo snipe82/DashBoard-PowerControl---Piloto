@@ -2,9 +2,19 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const serverless = require('serverless-http'); // 🚀 INYECTADO: Traductor para AWS Lambda
+const cors = require('cors'); // 🛡️ INYECTADO: Middleware para control de acceso HTTP
 
 const app = express();
 const PORT = 4521;
+
+// ==========================================
+// 🛡️ CONFIGURACIÓN CORS (CRÍTICO PARA AWS AMPLIFY)
+// ==========================================
+app.use(cors({
+    origin: '*', // Permite tráfico desde cualquier origen. En producción estricta, usa: 'https://main.d3pf7ajsyzsvkx.amplifyapp.com'
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Bypass-Tunnel-Reminder']
+}));
 
 // ==========================================
 // 🌐 CONFIGURACIÓN DEL ENTORNO DE BACKEND

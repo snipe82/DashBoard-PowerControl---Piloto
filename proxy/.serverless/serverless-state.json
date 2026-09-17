@@ -174,7 +174,7 @@
                 "S3Bucket": {
                   "Ref": "ServerlessDeploymentBucket"
                 },
-                "S3Key": "serverless/powercontrol-proxy/prod/1789607915741-2026-09-17T01:18:35.741Z/powercontrol-proxy.zip"
+                "S3Key": "serverless/powercontrol-proxy/prod/1789611130874-2026-09-17T02:12:10.874Z/powercontrol-proxy.zip"
               },
               "Handler": "server.handler",
               "Runtime": "nodejs20.x",
@@ -192,14 +192,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersionIlsiJXDyE96yvRuCP43skuglBfbNj2BDTvm5QwZws": {
+          "ApiLambdaVersionNALYHwDcF73f3b0bQRFVrEyv8DmqL8maIVraXMPX8": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "TG4AxkB0Nb8QW0jvFQGTRjVbn1RMjsB3bY8Afc0jZds="
+              "CodeSha256": "YVMnKsr+OUTzTL/6Ym2n9eJGKgHZVLaDh/AFWbwucxk="
             }
           },
           "HttpApi": {
@@ -307,7 +307,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersionIlsiJXDyE96yvRuCP43skuglBfbNj2BDTvm5QwZws"
+              "Ref": "ApiLambdaVersionNALYHwDcF73f3b0bQRFVrEyv8DmqL8maIVraXMPX8"
             },
             "Export": {
               "Name": "sls-powercontrol-proxy-prod-ApiLambdaFunctionQualifiedArn"
@@ -449,7 +449,7 @@
         "timeout": 6,
         "runtime": "nodejs20.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersionIlsiJXDyE96yvRuCP43skuglBfbNj2BDTvm5QwZws"
+        "versionLogicalId": "ApiLambdaVersionNALYHwDcF73f3b0bQRFVrEyv8DmqL8maIVraXMPX8"
       }
     },
     "configValidationMode": "warn",
@@ -468,7 +468,7 @@
     "artifact": "C:\\Users\\User\\Documents\\Proyectos Node\\Proyecto Manager PowerControl - Piloto\\proxy\\.serverless\\powercontrol-proxy.zip"
   },
   "package": {
-    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789607915741-2026-09-17T01:18:35.741Z",
+    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789611130874-2026-09-17T02:12:10.874Z",
     "artifact": "powercontrol-proxy.zip"
   }
 }
