@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// 🚀 ENRUTAMIENTO ABSOLUTO: Redirección del tráfico fuera de AWS hacia el Backend
+// Nota: Si tu túnel cambia, actualiza este enlace o usa una variable de entorno en Amplify.
+const API_URL = import.meta.env.VITE_API_URL || 'https://ready-chefs-enter.loca.lt';
+
 const api = axios.create({
-  // Configuración base de tu pasarela local
+  baseURL: API_URL, // <-- INYECCIÓN CRÍTICA: Fuerza el destino de las peticiones
   headers: {
     'Content-Type': 'application/json'
   }
