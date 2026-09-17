@@ -1,0 +1,13 @@
+service: powercontrol-proxy
+
+provider:
+  name: aws
+  runtime: nodejs20.x # Entorno Node de AWS
+  region: us-east-1
+  stage: prod
+
+functions:
+  api:
+    handler: server.handler # Apunta al 'module.exports.handler' de tu server.js
+    events:
+      - httpApi: '*' # Captura cualquier ruta (/api/alerts, /api/auth, etc.)

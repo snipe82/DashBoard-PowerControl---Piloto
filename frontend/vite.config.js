@@ -10,18 +10,19 @@ export default defineConfig({
   server: {
     // 🚀 INYECCIÓN DE PERMISOS PARA TÚNELES EXTERNOS
     allowedHosts: [
-      'beige-poems-joke.loca.lt',             // Localtunnel anterior
-      '.loca.lt',                             // Comodín Localtunnel
-      'mydgu-132-191-0-241.free.pinggy.net',  // Permite el túnel Pinggy actual
-      '.pinggy.net',                          // Comodín para futuros túneles Pinggy (.net)
-      '.pinggy.link',                         // Comodín para futuros túneles Pinggy (.link)
-      '.pinggy-free.link'                     // Comodín alternativo de Pinggy gratuito
+      'beige-poems-joke.loca.lt',             
+      '.loca.lt',                             
+      'mydgu-132-191-0-241.free.pinggy.net',  
+      '.pinggy.net',                          
+      '.pinggy.link',                         
+      '.pinggy-free.link'                     
     ],
     proxy: {
       // Este es el puente mágico hacia tu servidor Node.js
       '/api': {
-        target: 'http://localhost:4521',
-        changeOrigin: true,
+        target: 'https://w1jfcwal5h.execute-api.us-east-1.amazonaws.com', // 🚀 CORREGIDO: Sin espacios
+        changeOrigin: true, // 🚀 CORREGIDO: Disfraza la cabecera Host
+        secure: false,      // 🚀 AÑADIDO: Evita bloqueos SSL
       }
     }
   }

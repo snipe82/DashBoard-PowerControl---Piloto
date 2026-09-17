@@ -1,8 +1,15 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const serverless = require('serverless-http'); // 🚀 INYECTADO: Traductor para AWS Lambda
+
 const app = express();
 const PORT = 4521;
+
+// ==========================================
+// 🌐 CONFIGURACIÓN DEL ENTORNO DE BACKEND
+// ==========================================
+const BACKEND_URL = 'https://lo97hgr3l2.execute-api.us-east-1.amazonaws.com/prod'; 
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
@@ -18,28 +25,28 @@ const getHeaders = (req) => {
 // ==========================================
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const r = await fetch('http://127.0.0.1:3015/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
+        const r = await fetch(`${BACKEND_URL}/api/v1/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
         res.status(r.status).json(await r.json());
     } catch (error) { res.status(503).json({ error: 'Motor Auth no disponible' }); }
 });
 
 app.post('/api/auth/refresh', async (req, res) => {
     try {
-        const r = await fetch('http://127.0.0.1:3015/api/v1/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
+        const r = await fetch(`${BACKEND_URL}/api/v1/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
         res.status(r.status).json(await r.json());
     } catch (error) { res.status(503).json({ error: 'Motor Auth no disponible' }); }
 });
 
 app.post('/api/auth/logout', async (req, res) => {
     try {
-        const r = await fetch('http://127.0.0.1:3015/api/v1/auth/logout', { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const r = await fetch(`${BACKEND_URL}/api/v1/auth/logout`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(r.status).json(await r.json());
     } catch (error) { res.status(503).json({ error: 'Motor Auth no disponible' }); }
 });
 
 app.post('/api/auth/change-password', async (req, res) => {
     try {
-        const r = await fetch('http://127.0.0.1:3015/api/v1/auth/change-password', { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const r = await fetch(`${BACKEND_URL}/api/v1/auth/change-password`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(r.status).json(await r.json());
     } catch (error) { res.status(503).json({ error: 'Motor Auth no disponible' }); }
 });
@@ -49,7 +56,7 @@ app.post('/api/auth/change-password', async (req, res) => {
 // ==========================================
 app.get('/api/alerts', async (req, res) => {
     const { status, page, pageSize, dateFrom, dateTo, fraud_type } = req.query;
-    let backendUrl = `http://127.0.0.1:3015/api/v1/alerts?status=${status}&page=${page}&pageSize=${pageSize}`;
+    let backendUrl = `${BACKEND_URL}/api/v1/alerts?status=${status}&page=${page}&pageSize=${pageSize}`;
     if (dateFrom) backendUrl += `&dateFrom=${dateFrom}`;
     if (dateTo) backendUrl += `&dateTo=${dateTo}`;
     if (fraud_type) backendUrl += `&fraud_type=${fraud_type}`;
@@ -62,7 +69,7 @@ app.get('/api/alerts', async (req, res) => {
 
 app.post('/api/alerts/:id/lock', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/lock`, { method: 'POST', headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.id}/lock`, { method: 'POST', headers: getHeaders(req) });
         const data = await response.json().catch(() => null);
         res.status(response.status).json(data);
     } catch (error) { res.status(502).json({ message: 'Error de pasarela al intentar adquirir llave.' }); }
@@ -70,7 +77,7 @@ app.post('/api/alerts/:id/lock', async (req, res) => {
 
 app.post('/api/alerts/:id/unlock', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/unlock`, { method: 'POST', headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.id}/unlock`, { method: 'POST', headers: getHeaders(req) });
         const data = await response.json().catch(() => null);
         res.status(response.status).json(data);
     } catch (error) { res.status(502).json({ message: 'Error de pasarela al intentar liberar llave.' }); }
@@ -79,7 +86,7 @@ app.post('/api/alerts/:id/unlock', async (req, res) => {
 app.get('/api/alerts/dni/:dni', async (req, res) => {
     try {
         const { status, fraud_type } = req.query;
-        let url = `http://127.0.0.1:3015/api/v1/alerts/dni/${req.params.dni}?status=${status || ''}`;
+        let url = `${BACKEND_URL}/api/v1/alerts/dni/${req.params.dni}?status=${status || ''}`;
         if (fraud_type) url += `&fraud_type=${fraud_type}`;
         const response = await fetch(url, { headers: getHeaders(req) });
         const data = await response.json().catch(() => ({}));
@@ -90,7 +97,7 @@ app.get('/api/alerts/dni/:dni', async (req, res) => {
 app.get('/api/alerts/grouped', async (req, res) => {
     try {
         const { status, page, pageSize, dateFrom, dateTo, search, fraud_type } = req.query;
-        let backendUrl = `http://127.0.0.1:3015/api/v1/alerts/grouped?status=${status}&page=${page}&pageSize=${pageSize}`;
+        let backendUrl = `${BACKEND_URL}/api/v1/alerts/grouped?status=${status}&page=${page}&pageSize=${pageSize}`;
         if (dateFrom) backendUrl += `&dateFrom=${dateFrom}`;
         if (dateTo) backendUrl += `&dateTo=${dateTo}`;
         if (search) backendUrl += `&search=${search}`;
@@ -104,7 +111,7 @@ app.get('/api/alerts/grouped', async (req, res) => {
 app.get('/api/alerts/entity/:id', async (req, res) => {
     try {
         const { status, fraud_type } = req.query;
-        let url = `http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.id}?status=${status || ''}`;
+        let url = `${BACKEND_URL}/api/v1/alerts/entity/${req.params.id}?status=${status || ''}`;
         if (fraud_type) url += `&fraud_type=${fraud_type}`;
         const response = await fetch(url, { headers: getHeaders(req) });
         const data = await response.json().catch(() => ({}));
@@ -114,7 +121,7 @@ app.get('/api/alerts/entity/:id', async (req, res) => {
 
 app.patch('/api/alerts/entity/:id/review', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.id}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/entity/${req.params.id}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (error) { res.status(502).json({ error: "Error revisión pasarela" }); }
@@ -122,7 +129,7 @@ app.patch('/api/alerts/entity/:id/review', async (req, res) => {
 
 app.patch('/api/alerts/dni/:dni/review', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/entity/${req.params.dni}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/entity/${req.params.dni}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (error) { res.status(502).json({ error: "Error revisión pasarela" }); }
@@ -130,7 +137,7 @@ app.patch('/api/alerts/dni/:dni/review', async (req, res) => {
 
 app.get('/api/alerts/:id', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.id}`, { headers: getHeaders(req) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (e) { res.status(500).json({ error: "Error" }); }
@@ -138,7 +145,7 @@ app.get('/api/alerts/:id', async (req, res) => {
 
 app.get('/api/alerts/:id/payload', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/payload`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.id}/payload`, { headers: getHeaders(req) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (e) { res.status(500).json({ error: "Error" }); }
@@ -146,7 +153,7 @@ app.get('/api/alerts/:id/payload', async (req, res) => {
 
 app.patch('/api/alerts/:id/review', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.id}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.id}/review`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (e) { res.status(500).json({ error: "Error" }); }
@@ -154,7 +161,7 @@ app.patch('/api/alerts/:id/review', async (req, res) => {
 
 app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/customer/${req.params.customer_id}/audit`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/customer/${req.params.customer_id}/audit`, { headers: getHeaders(req) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
@@ -162,7 +169,7 @@ app.get('/api/v1/alerts/customer/:customer_id/audit', async (req, res) => {
 
 app.post('/api/v1/alerts/speech/generate', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/speech/generate`, {
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/speech/generate`, {
             method: 'POST',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
@@ -176,7 +183,7 @@ app.post('/api/v1/alerts/speech/generate', async (req, res) => {
 // 🚀 RUTA PROXY: Puente para inyectar datos a Lista Negra (Blacklisting)
 app.post('/api/v1/alerts/:alert_id/blacklist', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.alert_id}/blacklist`, {
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.alert_id}/blacklist`, {
             method: 'POST',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
@@ -190,7 +197,7 @@ app.post('/api/v1/alerts/:alert_id/blacklist', async (req, res) => {
 // 🚀 NUEVA RUTA PROXY: Puente para la REVERSA de datos de la Lista Negra (Whitelisting)
 app.post('/api/v1/alerts/:alert_id/blacklist/remove', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/alerts/${req.params.alert_id}/blacklist/remove`, {
+        const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.alert_id}/blacklist/remove`, {
             method: 'POST',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
@@ -206,7 +213,7 @@ app.post('/api/v1/alerts/:alert_id/blacklist/remove', async (req, res) => {
 // ==========================================
 app.put('/api/v1/cases/:case_id/resolve', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/cases/${req.params.case_id}/resolve`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/cases/${req.params.case_id}/resolve`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
         const data = await response.json().catch(() => ({}));
         res.status(response.status).json(data);
     } catch (error) { res.status(502).json({ error: 'Error de pasarela al intentar resolver caso.' }); }
@@ -217,28 +224,28 @@ app.put('/api/v1/cases/:case_id/resolve', async (req, res) => {
 // ==========================================
 app.get('/api/users', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/auth/users`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(502).json({ message: 'Servicio no disponible.' }); }
 });
 
 app.post('/api/users', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/auth/users`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(502).json({ message: 'Error en pasarela.' }); }
 });
 
 app.put('/api/users/:id', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/${req.params.id}`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/auth/users/${req.params.id}`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(502).json({ message: 'Error en pasarela.' }); }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/auth/users/${req.params.id}`, { method: 'DELETE', headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/auth/users/${req.params.id}`, { method: 'DELETE', headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(502).json({ message: 'Error en pasarela.' }); }
 });
@@ -248,14 +255,14 @@ app.delete('/api/users/:id', async (req, res) => {
 // ==========================================
 app.get('/api/v1/rules', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.get('/api/v1/rules/latest', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/latest`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/latest`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
@@ -263,14 +270,14 @@ app.get('/api/v1/rules/latest', async (req, res) => {
 app.get('/api/v1/rules/deployments/log', async (req, res) => {
     try {
         const limit = req.query.limit || 100;
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/deployments/log?limit=${limit}`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/deployments/log?limit=${limit}`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor de auditoría no disponible' }); }
 });
 
 app.post('/api/v1/rules/simulate', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/simulate`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/simulate`, { 
             method: 'POST', 
             headers: getHeaders(req), 
             body: JSON.stringify(req.body) 
@@ -281,7 +288,7 @@ app.post('/api/v1/rules/simulate', async (req, res) => {
 
 app.post('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/shadow`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/shadow`, { 
             method: 'POST', 
             headers: getHeaders(req), 
             body: JSON.stringify(req.body) 
@@ -292,14 +299,14 @@ app.post('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
 
 app.get('/api/v1/rules/:ruleCode/shadow/alerts', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/shadow/alerts`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/shadow/alerts`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.delete('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/shadow`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/shadow`, { 
             method: 'DELETE', 
             headers: getHeaders(req) 
         });
@@ -309,85 +316,85 @@ app.delete('/api/v1/rules/:ruleCode/shadow', async (req, res) => {
 
 app.post('/api/v1/rules/:ruleCode/draft', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/draft`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/draft`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.put('/api/v1/rules/:ruleCode/status', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/status`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/status`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.post('/api/v1/rules/:ruleCode/restore/:versionNumber', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/restore/${req.params.versionNumber}`, { method: 'POST', headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/restore/${req.params.versionNumber}`, { method: 'POST', headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.get('/api/v1/rules/dictionary', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/dictionary`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/dictionary`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.post('/api/v1/rules/test', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/test`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/test`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.post('/api/v1/rules/validate', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/validate`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/validate`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor de validación no disponible.' }); }
 });
 
 app.get('/api/v1/rules/:ruleCode/history', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/history`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/history`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.get('/api/v1/rules/:ruleCode', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.post('/api/v1/rules', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.put('/api/v1/rules/:ruleCode', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}`, { method: 'PUT', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/activation`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/activation`, { method: 'PATCH', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 NUEVA RUTA PROXY: Pase por Emergencia (Fast-Track)
+// 🚀 RUTA PROXY: Pase por Emergencia (Fast-Track)
 app.post('/api/v1/rules/:ruleCode/emergency-deploy', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/${req.params.ruleCode}/emergency-deploy`, {
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/emergency-deploy`, {
             method: 'POST',
             headers: getHeaders(req),
             body: JSON.stringify(req.body)
@@ -404,14 +411,14 @@ app.post('/api/v1/rules/:ruleCode/emergency-deploy', async (req, res) => {
 app.get('/api/v1/events/search', async (req, res) => {
     try {
         const queryString = req.url.split('?')[1] || '';
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/events/search?${queryString}`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/events/search?${queryString}`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ success: false, error: 'Servicio no disponible temporalmente.' }); }
 });
 
 app.post('/api/v1/events/manual-alert', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/events/manual-alert`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/events/manual-alert`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Servicio no disponible temporalmente.' }); }
 });
@@ -436,13 +443,13 @@ app.get('/api/stats/summary', async (req, res) => {
 
         const limit = 5000;
         const [abiertas, enRevision, fraudes, sospechosos, descartadas, enRevisionAdicional, fraudesCerrados] = await Promise.all([
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=OPEN&pageSize=${limit}`),
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=IN_REVIEW&pageSize=${limit}`),
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=FRAUD&pageSize=${limit}`),
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=SUSPICIOUS&pageSize=${limit}`),
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=DISCARDED&pageSize=${limit}`),
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=${limit}`),
-            fetchSafe(`http://127.0.0.1:3015/api/v1/alerts?status=CLOSED_CONFIRMED_FRAUD&pageSize=${limit}`)
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=OPEN&pageSize=${limit}`),
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=IN_REVIEW&pageSize=${limit}`),
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=FRAUD&pageSize=${limit}`),
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=SUSPICIOUS&pageSize=${limit}`),
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=DISCARDED&pageSize=${limit}`),
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=ADDITIONAL_REVIEW&pageSize=${limit}`),
+            fetchSafe(`${BACKEND_URL}/api/v1/alerts?status=CLOSED_CONFIRMED_FRAUD&pageSize=${limit}`)
         ]);
 
         const fraudesTotalesArr = [...fraudes, ...fraudesCerrados];
@@ -593,14 +600,14 @@ app.get('/api/stats/summary', async (req, res) => {
 // ==========================================
 app.post('/api/v1/rules/ai/generate', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/ai/generate`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/ai/generate`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor AI no disponible' }); }
 });
 
 app.post('/api/v1/rules/ai/modify', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/rules/ai/modify`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/rules/ai/modify`, { method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(503).json({ error: 'Motor AI no disponible' }); }
 });
@@ -612,14 +619,14 @@ app.post('/api/v1/rules/ai/modify', async (req, res) => {
 // 10.1 Gestión del Catálogo
 app.get('/api/lists/catalog', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/catalog`, { headers: getHeaders(req) });
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/catalog`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
 });
 
 app.post('/api/lists/catalog', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/catalog`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/catalog`, { 
             method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
@@ -628,7 +635,7 @@ app.post('/api/lists/catalog', async (req, res) => {
 
 app.delete('/api/lists/catalog/:list_id', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/catalog/${req.params.list_id}`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/catalog/${req.params.list_id}`, { 
             method: 'DELETE', headers: getHeaders(req) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
@@ -638,7 +645,7 @@ app.delete('/api/lists/catalog/:list_id', async (req, res) => {
 // 10.2 Gestión de Registros y Valores
 app.post('/api/lists/:list_id/manual', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/manual`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/${req.params.list_id}/manual`, { 
             method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
@@ -647,7 +654,7 @@ app.post('/api/lists/:list_id/manual', async (req, res) => {
 
 app.post('/api/lists/:list_id/bulk', async (req, res) => {
     try {
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/bulk`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/${req.params.list_id}/bulk`, { 
             method: 'POST', headers: getHeaders(req), body: JSON.stringify(req.body) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
@@ -659,7 +666,7 @@ app.get('/api/lists/:list_id', async (req, res) => {
         if(req.params.list_id.toLowerCase() === 'catalog') return res.status(400).json({error: "Ruta reservada"});
         
         const { page, limit, search } = req.query;
-        let url = `http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}?page=${page || 1}&limit=${limit || 10}`;
+        let url = `${BACKEND_URL}/api/v1/lists/${req.params.list_id}?page=${page || 1}&limit=${limit || 10}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
         
         const response = await fetch(url, { headers: getHeaders(req) });
@@ -670,7 +677,7 @@ app.get('/api/lists/:list_id', async (req, res) => {
 app.get('/api/lists/:list_id/:value', async (req, res) => {
     try {
         const safeValue = encodeURIComponent(req.params.value);
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/${safeValue}`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/${req.params.list_id}/${safeValue}`, { 
             headers: getHeaders(req) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
@@ -680,7 +687,7 @@ app.get('/api/lists/:list_id/:value', async (req, res) => {
 app.delete('/api/lists/:list_id/:value', async (req, res) => {
     try {
         const safeValue = encodeURIComponent(req.params.value);
-        const response = await fetch(`http://127.0.0.1:3015/api/v1/lists/${req.params.list_id}/${safeValue}`, { 
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/${req.params.list_id}/${safeValue}`, { 
             method: 'DELETE', headers: getHeaders(req) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
@@ -698,4 +705,17 @@ app.use((req, res) => {
     else res.send("🚀 Proxy de PowerControl activo.");
 });
 
-app.listen(PORT, () => console.log(`🚀 PowerControl Proxy Seguro en ejecución en el puerto: ${PORT}`));
+// ==========================================
+// 🚀 12. EXPORTACIÓN PARA AWS LAMBDA
+// ==========================================
+// Usamos la variable de entorno nativa de AWS para saber si estamos en la nube
+if (!process.env.LAMBDA_TASK_ROOT) {
+    // Modo Local (Tu computadora)
+    app.listen(PORT, () => {
+        console.log(`🚀 PowerControl Proxy Seguro en ejecución en el puerto: ${PORT}`);
+        console.log(`🔗 Enrutando tráfico hacia el Motor: ${BACKEND_URL}`);
+    });
+}
+
+// 🚨 CRÍTICO PARA AWS LAMBDA: Exportar el handler
+module.exports.handler = serverless(app);
