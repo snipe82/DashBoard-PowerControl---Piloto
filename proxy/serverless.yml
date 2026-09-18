@@ -10,4 +10,11 @@ functions:
   api:
     handler: server.handler # Apunta al 'module.exports.handler' de tu server.js
     events:
-      - httpApi: '*' # Captura cualquier ruta (/api/alerts, /api/auth, etc.)
+      # Captura todas las subrutas (/api/alerts, /api/auth, etc.)
+      - http:
+          path: /{proxy+}
+          method: ANY
+      # Captura la ruta raíz (/)
+      - http:
+          path: /
+          method: ANY

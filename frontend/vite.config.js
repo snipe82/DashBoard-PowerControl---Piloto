@@ -20,7 +20,7 @@ export default defineConfig({
     proxy: {
       // Este es el puente mágico hacia tu servidor Node.js
       '/api': {
-        target: 'https://w1jfcwal5h.execute-api.us-east-1.amazonaws.com', // 🚀 CORREGIDO: Sin espacios
+        target: 'https://9tn78aefic.execute-api.us-east-1.amazonaws.com', // 🚀 CORREGIDO: Sin espacios
         changeOrigin: true, // 🚀 CORREGIDO: Disfraza la cabecera Host
         secure: false,      // 🚀 AÑADIDO: Evita bloqueos SSL
       }
