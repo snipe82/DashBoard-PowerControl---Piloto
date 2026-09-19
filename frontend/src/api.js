@@ -7,8 +7,8 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://ready-chefs-enter.loca.
 const api = axios.create({
   baseURL: API_URL, // <-- INYECCIÓN CRÍTICA: Fuerza el destino de las peticiones
   headers: {
-    'Content-Type': 'application/json',
-    'Bypass-Tunnel-Reminder': 'true' // 🛡️ INYECCIÓN CRÍTICA: Salta la pantalla de bloqueo de Localtunnel
+    'Content-Type': 'application/json'
+    // 🗑️ CABECERA ELIMINADA: 'Bypass-Tunnel-Reminder'
   }
 });
 

@@ -174,7 +174,7 @@
                 "S3Bucket": {
                   "Ref": "ServerlessDeploymentBucket"
                 },
-                "S3Key": "serverless/powercontrol-proxy/prod/1789775864750-2026-09-18T23:57:44.750Z/powercontrol-proxy.zip"
+                "S3Key": "serverless/powercontrol-proxy/prod/1789777529999-2026-09-19T00:25:29.999Z/powercontrol-proxy.zip"
               },
               "Handler": "server.handler",
               "Runtime": "nodejs20.x",
@@ -192,14 +192,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersionNALYHwDcF73f3b0bQRFVrEyv8DmqL8maIVraXMPX8": {
+          "ApiLambdaVersionhoKhLOzeQlx0aaBYRTsRBsuWMKHGBIFuKSE4T6FGBM": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "YVMnKsr+OUTzTL/6Ym2n9eJGKgHZVLaDh/AFWbwucxk="
+              "CodeSha256": "VZ6XKEXWEPLWdPVT5grgFlgbC/K6MTBusqdoREc2Prg="
             }
           },
           "ApiGatewayRestApi": {
@@ -224,6 +224,99 @@
                 ]
               },
               "PathPart": "{proxy+}",
+              "RestApiId": {
+                "Ref": "ApiGatewayRestApi"
+              }
+            }
+          },
+          "ApiGatewayMethodProxyVarOptions": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+              "AuthorizationType": "NONE",
+              "HttpMethod": "OPTIONS",
+              "MethodResponses": [
+                {
+                  "StatusCode": "200",
+                  "ResponseParameters": {
+                    "method.response.header.Access-Control-Allow-Origin": true,
+                    "method.response.header.Access-Control-Allow-Headers": true,
+                    "method.response.header.Access-Control-Allow-Methods": true
+                  },
+                  "ResponseModels": {}
+                }
+              ],
+              "RequestParameters": {},
+              "Integration": {
+                "Type": "MOCK",
+                "RequestTemplates": {
+                  "application/json": "{statusCode:200}"
+                },
+                "ContentHandling": "CONVERT_TO_TEXT",
+                "IntegrationResponses": [
+                  {
+                    "StatusCode": "200",
+                    "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Origin": "'*'",
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization,bypass-tunnel-reminder'",
+                      "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,DELETE,GET,HEAD,PATCH,POST,PUT'"
+                    },
+                    "ResponseTemplates": {
+                      "application/json": ""
+                    }
+                  }
+                ]
+              },
+              "ResourceId": {
+                "Ref": "ApiGatewayResourceProxyVar"
+              },
+              "RestApiId": {
+                "Ref": "ApiGatewayRestApi"
+              }
+            }
+          },
+          "ApiGatewayMethodOptions": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+              "AuthorizationType": "NONE",
+              "HttpMethod": "OPTIONS",
+              "MethodResponses": [
+                {
+                  "StatusCode": "200",
+                  "ResponseParameters": {
+                    "method.response.header.Access-Control-Allow-Origin": true,
+                    "method.response.header.Access-Control-Allow-Headers": true,
+                    "method.response.header.Access-Control-Allow-Methods": true
+                  },
+                  "ResponseModels": {}
+                }
+              ],
+              "RequestParameters": {},
+              "Integration": {
+                "Type": "MOCK",
+                "RequestTemplates": {
+                  "application/json": "{statusCode:200}"
+                },
+                "ContentHandling": "CONVERT_TO_TEXT",
+                "IntegrationResponses": [
+                  {
+                    "StatusCode": "200",
+                    "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Origin": "'*'",
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization,bypass-tunnel-reminder'",
+                      "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,DELETE,GET,HEAD,PATCH,POST,PUT'"
+                    },
+                    "ResponseTemplates": {
+                      "application/json": ""
+                    }
+                  }
+                ]
+              },
+              "ResourceId": {
+                "Fn::GetAtt": [
+                  "ApiGatewayRestApi",
+                  "RootResourceId"
+                ]
+              },
               "RestApiId": {
                 "Ref": "ApiGatewayRestApi"
               }
@@ -324,7 +417,7 @@
               "ApiLambdaPermissionApiGateway"
             ]
           },
-          "ApiGatewayDeployment1789775833003": {
+          "ApiGatewayDeployment1789777523637": {
             "Type": "AWS::ApiGateway::Deployment",
             "Properties": {
               "RestApiId": {
@@ -333,6 +426,8 @@
               "StageName": "prod"
             },
             "DependsOn": [
+              "ApiGatewayMethodProxyVarOptions",
+              "ApiGatewayMethodOptions",
               "ApiGatewayMethodProxyVarAny",
               "ApiGatewayMethodAny"
             ]
@@ -387,7 +482,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersionNALYHwDcF73f3b0bQRFVrEyv8DmqL8maIVraXMPX8"
+              "Ref": "ApiLambdaVersionhoKhLOzeQlx0aaBYRTsRBsuWMKHGBIFuKSE4T6FGBM"
             },
             "Export": {
               "Name": "sls-powercontrol-proxy-prod-ApiLambdaFunctionQualifiedArn"
@@ -514,6 +609,19 @@
             "http": {
               "path": "{proxy+}",
               "method": "any",
+              "cors": {
+                "origin": "*",
+                "methods": [
+                  "OPTIONS",
+                  "ANY"
+                ],
+                "headers": [
+                  "Content-Type",
+                  "Authorization",
+                  "bypass-tunnel-reminder"
+                ],
+                "allowCredentials": false
+              },
               "integration": "AWS_PROXY"
             }
           },
@@ -521,6 +629,19 @@
             "http": {
               "path": "",
               "method": "any",
+              "cors": {
+                "origin": "*",
+                "methods": [
+                  "OPTIONS",
+                  "ANY"
+                ],
+                "headers": [
+                  "Content-Type",
+                  "Authorization",
+                  "bypass-tunnel-reminder"
+                ],
+                "allowCredentials": false
+              },
               "integration": "AWS_PROXY"
             }
           }
@@ -531,7 +652,7 @@
         "timeout": 6,
         "runtime": "nodejs20.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersionNALYHwDcF73f3b0bQRFVrEyv8DmqL8maIVraXMPX8"
+        "versionLogicalId": "ApiLambdaVersionhoKhLOzeQlx0aaBYRTsRBsuWMKHGBIFuKSE4T6FGBM"
       }
     },
     "configValidationMode": "warn",
@@ -550,7 +671,7 @@
     "artifact": "C:\\Users\\User\\Documents\\Proyectos Node\\Proyecto Manager PowerControl - Piloto\\proxy\\.serverless\\powercontrol-proxy.zip"
   },
   "package": {
-    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789775864750-2026-09-18T23:57:44.750Z",
+    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789777529999-2026-09-19T00:25:29.999Z",
     "artifact": "powercontrol-proxy.zip"
   }
 }

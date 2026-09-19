@@ -1,27 +1,15 @@
 const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const serverless = require('serverless-http'); // 🚀 INYECTADO: Traductor para AWS Lambda
-const cors = require('cors'); // 🛡️ INYECTADO: Middleware para control de acceso HTTP
-
+const serverless = require('serverless-http'); // 🚀 ADAPTADOR PARA LAMBDA
+const cors = require('cors'); // 🚀 GESTOR DE CORS NATIVO
 const app = express();
-const PORT = 4521;
-
-// ==========================================
-// 🛡️ CONFIGURACIÓN CORS (CRÍTICO PARA AWS AMPLIFY)
-// ==========================================
-app.use(cors({
-    origin: '*', // Permite tráfico desde cualquier origen. En producción estricta, usa: 'https://main.d3pf7ajsyzsvkx.amplifyapp.com'
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Bypass-Tunnel-Reminder']
-}));
 
 // ==========================================
 // 🌐 CONFIGURACIÓN DEL ENTORNO DE BACKEND
 // ==========================================
-const BACKEND_URL = 'https://lo97hgr3l2.execute-api.us-east-1.amazonaws.com/prod'; 
+const BACKEND_URL = 'https://lo97hgr3l2.execute-api.us-east-1.amazonaws.com/prod'; // ☁️ AMBIENTE AWS (NUBE)
 
-app.use(express.static(path.join(__dirname, 'public')));
+// 🚀 ABRIMOS LAS PUERTAS DE CORS PARA TU FRONTEND EN AMPLIFY
+app.use(cors());
 app.use(express.json());
 
 const getHeaders = (req) => {
@@ -190,7 +178,6 @@ app.post('/api/v1/alerts/speech/generate', async (req, res) => {
     }
 });
 
-// 🚀 RUTA PROXY: Puente para inyectar datos a Lista Negra (Blacklisting)
 app.post('/api/v1/alerts/:alert_id/blacklist', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.alert_id}/blacklist`, {
@@ -204,7 +191,6 @@ app.post('/api/v1/alerts/:alert_id/blacklist', async (req, res) => {
     }
 });
 
-// 🚀 NUEVA RUTA PROXY: Puente para la REVERSA de datos de la Lista Negra (Whitelisting)
 app.post('/api/v1/alerts/:alert_id/blacklist/remove', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/alerts/${req.params.alert_id}/blacklist/remove`, {
@@ -274,7 +260,7 @@ app.get('/api/v1/rules/latest', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/rules/latest`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
-    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
+    } catch (error) { res.status(503).json({ error 'Motor no disponible' }); }
 });
 
 app.get('/api/v1/rules/deployments/log', async (req, res) => {
@@ -401,7 +387,6 @@ app.patch('/api/v1/rules/:ruleCode/activation', async (req, res) => {
     } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
-// 🚀 RUTA PROXY: Pase por Emergencia (Fast-Track)
 app.post('/api/v1/rules/:ruleCode/emergency-deploy', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/rules/${req.params.ruleCode}/emergency-deploy`, {
@@ -625,8 +610,6 @@ app.post('/api/v1/rules/ai/modify', async (req, res) => {
 // ==========================================
 // 📋 10. MÓDULO DE LISTAS (CATÁLOGO DINÁMICO)
 // ==========================================
-
-// 10.1 Gestión del Catálogo
 app.get('/api/lists/catalog', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/lists/catalog`, { headers: getHeaders(req) });
@@ -652,7 +635,6 @@ app.delete('/api/lists/catalog/:list_id', async (req, res) => {
     } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
 });
 
-// 10.2 Gestión de Registros y Valores
 app.post('/api/lists/:list_id/manual', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/lists/${req.params.list_id}/manual`, { 
@@ -705,27 +687,6 @@ app.delete('/api/lists/:list_id/:value', async (req, res) => {
 });
 
 // ==========================================
-// 🌐 11. MANEJO DE RUTAS ESTÁTICAS / WILDCARD
+// 🚀 EXPORTADOR PARA AWS LAMBDA (Reemplaza a app.listen)
 // ==========================================
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'views', 'index.html')));
-
-app.use((req, res) => {
-    const reactAppPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(reactAppPath)) res.sendFile(reactAppPath);
-    else res.send("🚀 Proxy de PowerControl activo.");
-});
-
-// ==========================================
-// 🚀 12. EXPORTACIÓN PARA AWS LAMBDA
-// ==========================================
-// Usamos la variable de entorno nativa de AWS para saber si estamos en la nube
-if (!process.env.LAMBDA_TASK_ROOT) {
-    // Modo Local (Tu computadora)
-    app.listen(PORT, () => {
-        console.log(`🚀 PowerControl Proxy Seguro en ejecución en el puerto: ${PORT}`);
-        console.log(`🔗 Enrutando tráfico hacia el Motor: ${BACKEND_URL}`);
-    });
-}
-
-// 🚨 CRÍTICO PARA AWS LAMBDA: Exportar el handler
 module.exports.handler = serverless(app);
