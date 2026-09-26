@@ -2,15 +2,15 @@ service: powercontrol-proxy
 
 provider:
   name: aws
-  runtime: nodejs20.x # Entorno Node de AWS
+  runtime: nodejs20.x
   region: us-east-1
   stage: prod
+  timeout: 29 # 🚀 INYECCIÓN CRÍTICA: Le damos 29 segundos para procesar el Dashboard
 
 functions:
   api:
-    handler: server.handler # Apunta al 'module.exports.handler' de tu server.js
+    handler: server.handler
     events:
-      # Captura todas las subrutas (/api/alerts, /api/auth, etc.)
       - http:
           path: /{proxy+}
           method: ANY
@@ -19,8 +19,6 @@ functions:
             headers:
               - Content-Type
               - Authorization
-              - bypass-tunnel-reminder
-      # Captura la ruta raíz (/)
       - http:
           path: /
           method: ANY
@@ -29,4 +27,3 @@ functions:
             headers:
               - Content-Type
               - Authorization
-              - bypass-tunnel-reminder

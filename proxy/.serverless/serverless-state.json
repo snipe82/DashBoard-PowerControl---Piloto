@@ -9,6 +9,7 @@
       "runtime": "nodejs20.x",
       "region": "us-east-1",
       "stage": "prod",
+      "timeout": 29,
       "versionFunctions": true,
       "compiledCloudFormationTemplate": {
         "AWSTemplateFormatVersion": "2010-09-09",
@@ -174,13 +175,13 @@
                 "S3Bucket": {
                   "Ref": "ServerlessDeploymentBucket"
                 },
-                "S3Key": "serverless/powercontrol-proxy/prod/1789777529999-2026-09-19T00:25:29.999Z/powercontrol-proxy.zip"
+                "S3Key": "serverless/powercontrol-proxy/prod/1789778432950-2026-09-19T00:40:32.950Z/powercontrol-proxy.zip"
               },
               "Handler": "server.handler",
               "Runtime": "nodejs20.x",
               "FunctionName": "powercontrol-proxy-prod-api",
               "MemorySize": 1024,
-              "Timeout": 6,
+              "Timeout": 29,
               "Role": {
                 "Fn::GetAtt": [
                   "IamRoleLambdaExecution",
@@ -192,14 +193,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersionhoKhLOzeQlx0aaBYRTsRBsuWMKHGBIFuKSE4T6FGBM": {
+          "ApiLambdaVersion8tdHMDpKsT1npfasB3Zhp22P7Jg6Wk1yLnftNI7c": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "VZ6XKEXWEPLWdPVT5grgFlgbC/K6MTBusqdoREc2Prg="
+              "CodeSha256": "QI0nz10cASADO+UxdLX8ILhadtpETgpMQZmN1zU8VVc="
             }
           },
           "ApiGatewayRestApi": {
@@ -257,7 +258,7 @@
                     "StatusCode": "200",
                     "ResponseParameters": {
                       "method.response.header.Access-Control-Allow-Origin": "'*'",
-                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization,bypass-tunnel-reminder'",
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization'",
                       "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,DELETE,GET,HEAD,PATCH,POST,PUT'"
                     },
                     "ResponseTemplates": {
@@ -302,7 +303,7 @@
                     "StatusCode": "200",
                     "ResponseParameters": {
                       "method.response.header.Access-Control-Allow-Origin": "'*'",
-                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization,bypass-tunnel-reminder'",
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization'",
                       "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,DELETE,GET,HEAD,PATCH,POST,PUT'"
                     },
                     "ResponseTemplates": {
@@ -417,7 +418,7 @@
               "ApiLambdaPermissionApiGateway"
             ]
           },
-          "ApiGatewayDeployment1789777523637": {
+          "ApiGatewayDeployment1789778426338": {
             "Type": "AWS::ApiGateway::Deployment",
             "Properties": {
               "RestApiId": {
@@ -482,7 +483,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersionhoKhLOzeQlx0aaBYRTsRBsuWMKHGBIFuKSE4T6FGBM"
+              "Ref": "ApiLambdaVersion8tdHMDpKsT1npfasB3Zhp22P7Jg6Wk1yLnftNI7c"
             },
             "Export": {
               "Name": "sls-powercontrol-proxy-prod-ApiLambdaFunctionQualifiedArn"
@@ -617,8 +618,7 @@
                 ],
                 "headers": [
                   "Content-Type",
-                  "Authorization",
-                  "bypass-tunnel-reminder"
+                  "Authorization"
                 ],
                 "allowCredentials": false
               },
@@ -637,8 +637,7 @@
                 ],
                 "headers": [
                   "Content-Type",
-                  "Authorization",
-                  "bypass-tunnel-reminder"
+                  "Authorization"
                 ],
                 "allowCredentials": false
               },
@@ -649,10 +648,10 @@
         "name": "powercontrol-proxy-prod-api",
         "package": {},
         "memory": 1024,
-        "timeout": 6,
+        "timeout": 29,
         "runtime": "nodejs20.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersionhoKhLOzeQlx0aaBYRTsRBsuWMKHGBIFuKSE4T6FGBM"
+        "versionLogicalId": "ApiLambdaVersion8tdHMDpKsT1npfasB3Zhp22P7Jg6Wk1yLnftNI7c"
       }
     },
     "configValidationMode": "warn",
@@ -671,7 +670,7 @@
     "artifact": "C:\\Users\\User\\Documents\\Proyectos Node\\Proyecto Manager PowerControl - Piloto\\proxy\\.serverless\\powercontrol-proxy.zip"
   },
   "package": {
-    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789777529999-2026-09-19T00:25:29.999Z",
+    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789778432950-2026-09-19T00:40:32.950Z",
     "artifact": "powercontrol-proxy.zip"
   }
 }

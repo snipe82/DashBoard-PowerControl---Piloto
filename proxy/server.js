@@ -260,7 +260,7 @@ app.get('/api/v1/rules/latest', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/rules/latest`, { headers: getHeaders(req) });
         res.status(response.status).json(await response.json().catch(() => ({})));
-    } catch (error) { res.status(503).json({ error 'Motor no disponible' }); }
+    } catch (error) { res.status(503).json({ error: 'Motor no disponible' }); }
 });
 
 app.get('/api/v1/rules/deployments/log', async (req, res) => {
@@ -684,6 +684,35 @@ app.delete('/api/lists/:list_id/:value', async (req, res) => {
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
     } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
+});
+
+// ==========================================
+// 💳 11. MÓDULO DE EVALUACIÓN DE CRÉDITOS (FULL APPLICATION)
+// ==========================================
+app.post('/api/v1/applications/rt', async (req, res) => {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/v1/applications/rt`, { 
+            method: 'POST', 
+            headers: getHeaders(req), 
+            body: JSON.stringify(req.body) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { 
+        res.status(503).json({ error: 'Motor de evaluación RT no disponible' }); 
+    }
+});
+
+app.post('/api/v1/applications/nrt', async (req, res) => {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/v1/applications/nrt`, { 
+            method: 'POST', 
+            headers: getHeaders(req), 
+            body: JSON.stringify(req.body) 
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { 
+        res.status(503).json({ error: 'Motor de evaluación NRT no disponible' }); 
+    }
 });
 
 // ==========================================
