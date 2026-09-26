@@ -7,7 +7,7 @@ const LIST_TYPES = [
 ];
 
 const ListsMaintenance = () => {
-  const [activeTab, setActiveTab] = useState('CATALOG'); // CATALOG, RECORDS, MANUAL, BULK
+  const [activeTab, setActiveTab] = useState('CATALOG'); // CATALOG, MERCHANTS, RECORDS, MANUAL, BULK
   const [status, setStatus] = useState({ type: '', message: '' });
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
@@ -32,8 +32,16 @@ const ListsMaintenance = () => {
   const [manualListType, setManualListType] = useState('BLACK');
   const [manualReason, setManualReason] = useState('');
 
-  // Carga Masiva
+  // Carga Masiva (Listas Estándar)
   const [bulkFile, setBulkFile] = useState(null);
+
+  // ==========================================
+  // 🚀 ESTADOS: CATÁLOGO DE TIENDAS (NUEVO)
+  // ==========================================
+  const [merchantFile, setMerchantFile] = useState(null);
+  const [merchantLoading, setMerchantLoading] = useState(false);
+  const merchantFileInputRef = useRef(null);
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
   const showMessage = (type, message) => {
     setStatus({ type, message });
@@ -94,7 +102,7 @@ const ListsMaintenance = () => {
     }
   };
 
-  // --- 📥 Descarga de Plantilla CSV ---
+  // --- 📥 Descarga de Plantilla CSV (Listas Estándar) ---
   const downloadTemplate = () => {
     const csvContent = "value,list_type,reason\n" +
                        "ejemplo@fraude.com,BLACK,Ataque coordinado detectado\n" +
@@ -121,7 +129,6 @@ const ListsMaintenance = () => {
       const res = await api.get(url);
       const payload = res.data;
 
-      // 🛡️ Búsqueda Agresiva del Arreglo (Cubre múltiples formatos de backend)
       let arrayRegistros = [];
       let paginacionBackend = { current_page: 1, total_pages: 1, total_records: 0, per_page: 10 };
 
@@ -164,7 +171,6 @@ const ListsMaintenance = () => {
     fetchRecords(1, '');
   };
 
-  // --- 🗑️ 2.4 Eliminación de Registro Individual ---
   const handleDeleteRecord = async (valueToDelete) => {
     if (!window.confirm(`¿Está seguro de eliminar el registro '${valueToDelete}'?`)) return;
     setLoading(true);
@@ -201,7 +207,7 @@ const ListsMaintenance = () => {
     }
   };
 
-  // --- 📦 2.2 Carga Masiva (Parseo Inteligente Front -> JSON API) ---
+  // --- 📦 2.2 Carga Masiva (Listas Estándar) ---
   const handleBulkSubmit = async (e) => {
     e.preventDefault();
     if (!bulkFile) return showMessage('error', 'Debe seleccionar un archivo (.csv).');
@@ -214,7 +220,6 @@ const ListsMaintenance = () => {
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
         if (lines.length < 2) throw new Error("El archivo está vacío o no tiene registros.");
 
-        // 🚀 MEJORA: Detección automática del delimitador usado en el CSV
         const firstLine = lines[0];
         const delimiter = firstLine.includes(';') ? ';' : ',';
 
@@ -255,6 +260,57 @@ const ListsMaintenance = () => {
     reader.readAsText(bulkFile);
   };
 
+  // ==========================================
+  // 🏪 LÓGICA: CARGA CATÁLOGO DE TIENDAS
+  // ==========================================
+  const handleMerchantFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) {
+      setMerchantFile(null);
+      return;
+    }
+    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
+      showMessage('error', 'Formato inválido. El motor solo acepta archivos .csv');
+      setMerchantFile(null);
+      if (merchantFileInputRef.current) merchantFileInputRef.current.value = '';
+      return;
+    }
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      showMessage('error', 'El archivo excede el límite de 5MB permitido por la bóveda.');
+      setMerchantFile(null);
+      if (merchantFileInputRef.current) merchantFileInputRef.current.value = '';
+      return;
+    }
+    setMerchantFile(selectedFile);
+  };
+
+  const handleMerchantUpload = async (e) => {
+    e.preventDefault();
+    if (!merchantFile) return showMessage('error', 'Debe seleccionar un archivo (.csv).');
+
+    setMerchantLoading(true);
+    const formData = new FormData();
+    formData.append('file', merchantFile);
+
+    try {
+      const res = await api.post('/api/lists/merchant-store/bulk', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (res.data && res.data.success) {
+        showMessage('success', `${res.data.message} (Insertados: ${res.data.inserted} | Actualizados: ${res.data.updated})`);
+        setMerchantFile(null);
+        if (merchantFileInputRef.current) merchantFileInputRef.current.value = '';
+      } else {
+        showMessage('error', res.data?.error || 'Fallo en la sincronización del catálogo.');
+      }
+    } catch (error) {
+      showMessage('error', error.response?.data?.error || 'Error de intercepción: El proxy no pudo procesar el archivo.');
+    } finally {
+      setMerchantLoading(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 h-full flex flex-col bg-slate-50">
       <div className="mb-6">
@@ -283,6 +339,12 @@ const ListsMaintenance = () => {
           <button onClick={() => setActiveTab('CATALOG')} className={`px-6 py-3 whitespace-nowrap text-sm font-black transition-colors border-b-2 ${activeTab === 'CATALOG' ? 'border-power-purple text-power-purple bg-white' : 'border-transparent text-gray-500 hover:bg-gray-100'}`}>
             📚 Catálogo de Listas
           </button>
+          
+          {/* 🚀 NUEVA PESTAÑA: CATÁLOGO DE TIENDAS */}
+          <button onClick={() => setActiveTab('MERCHANTS')} className={`px-6 py-3 whitespace-nowrap text-sm font-black transition-colors border-b-2 ${activeTab === 'MERCHANTS' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:bg-gray-100'}`}>
+            🏪 Catálogo de Tiendas
+          </button>
+
           <button onClick={() => setActiveTab('RECORDS')} className={`px-6 py-3 whitespace-nowrap text-sm font-black transition-colors border-b-2 ${activeTab === 'RECORDS' ? 'border-power-purple text-power-purple bg-white' : 'border-transparent text-gray-500 hover:bg-gray-100'}`}>
             📖 Ver Registros
           </button>
@@ -365,8 +427,47 @@ const ListsMaintenance = () => {
             </div>
           )}
 
-          {/* SELECTOR MAESTRO DE LISTAS (COMPARTIDO PARA OPERACIONES) */}
-          {activeTab !== 'CATALOG' && (
+          {/* 🚀 TAB NUEVA: CATÁLOGO DE TIENDAS */}
+          {activeTab === 'MERCHANTS' && (
+            <div className="max-w-2xl mx-auto animate-fade-in">
+              <form onSubmit={handleMerchantUpload} className="space-y-5 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                
+                <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-r-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-blue-900 mb-1">Estructura para Catálogo de Tiendas (Upsert)</h4>
+                    <p className="text-xs text-blue-800 mb-2">El archivo debe contener obligatoriamente estas columnas:</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <code className="text-xs font-black bg-white text-blue-900 px-2 py-1 rounded border border-blue-200 shadow-sm">merchant_id</code>
+                      <code className="text-xs font-black bg-white text-blue-900 px-2 py-1 rounded border border-blue-200 shadow-sm">ruc</code>
+                      <code className="text-xs font-black bg-white text-blue-900 px-2 py-1 rounded border border-blue-200 shadow-sm">display_name</code>
+                      <code className="text-xs font-black bg-white text-blue-900 px-2 py-1 rounded border border-blue-200 shadow-sm">billing_address</code>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Archivo de carga (Formato .csv - Máx 5MB)</label>
+                  <input 
+                    type="file" 
+                    ref={merchantFileInputRef}
+                    accept=".csv"
+                    onChange={handleMerchantFileChange} 
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 transition-all cursor-pointer" 
+                    required 
+                  />
+                </div>
+                
+                <div className="pt-2 border-t border-gray-100">
+                  <button type="submit" disabled={merchantLoading || !merchantFile} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors shadow-md disabled:opacity-50 flex justify-center items-center gap-2">
+                    {merchantLoading ? 'Transmitiendo a Bóveda Central...' : <>🚀 Ejecutar Sincronización de Catálogo</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* SELECTOR MAESTRO DE LISTAS (COMPARTIDO PARA OPERACIONES ESTÁNDAR) */}
+          {(activeTab === 'RECORDS' || activeTab === 'MANUAL' || activeTab === 'BULK') && (
             <div className="max-w-4xl mx-auto mb-6 bg-power-blue/5 border border-power-blue/20 p-4 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
                <div>
                   <p className="text-[10px] font-black text-power-blue uppercase tracking-widest mb-1">Operando sobre la Lista:</p>
