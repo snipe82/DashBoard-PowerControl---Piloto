@@ -635,6 +635,26 @@ app.delete('/api/lists/catalog/:list_id', async (req, res) => {
     } catch (error) { res.status(502).json({ error: 'Motor de listas no disponible' }); }
 });
 
+// 🚀 NUEVO ENDPOINT: Carga masiva de catálogo de tiendas (Soporte Multipart/Form-Data)
+app.post('/api/lists/merchant-store/bulk', async (req, res) => {
+    try {
+        // Copiamos los headers base de autorización, pero SOBREESCRIBIMOS el Content-Type
+        // para preservar el form-data y el 'boundary' único generado por el navegador del analista.
+        const customHeaders = { ...getHeaders(req) };
+        customHeaders['Content-Type'] = req.headers['content-type'];
+
+        const response = await fetch(`${BACKEND_URL}/api/v1/lists/merchant-store/bulk`, { 
+            method: 'POST', 
+            headers: customHeaders, 
+            body: req,         // Pasamos el stream binario del CSV directamente
+            duplex: 'half'     // Directiva obligatoria en Node.js para transmitir streams
+        });
+        res.status(response.status).json(await response.json().catch(() => ({})));
+    } catch (error) { 
+        res.status(503).json({ success: false, error: 'Motor de listas no disponible para carga de catálogo' }); 
+    }
+});
+
 app.post('/api/lists/:list_id/manual', async (req, res) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/v1/lists/${req.params.list_id}/manual`, { 
@@ -710,7 +730,7 @@ app.post('/api/v1/applications/nrt', async (req, res) => {
             body: JSON.stringify(req.body) 
         });
         res.status(response.status).json(await response.json().catch(() => ({})));
-    } catch (error) { 
+    } catch (error) { s
         res.status(503).json({ error: 'Motor de evaluación NRT no disponible' }); 
     }
 });

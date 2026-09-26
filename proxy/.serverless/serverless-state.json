@@ -175,7 +175,7 @@
                 "S3Bucket": {
                   "Ref": "ServerlessDeploymentBucket"
                 },
-                "S3Key": "serverless/powercontrol-proxy/prod/1789778432950-2026-09-19T00:40:32.950Z/powercontrol-proxy.zip"
+                "S3Key": "serverless/powercontrol-proxy/prod/1790431583260-2026-09-26T14:06:23.260Z/powercontrol-proxy.zip"
               },
               "Handler": "server.handler",
               "Runtime": "nodejs20.x",
@@ -193,14 +193,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersion8tdHMDpKsT1npfasB3Zhp22P7Jg6Wk1yLnftNI7c": {
+          "ApiLambdaVersion3bdlV93tcx0XerJJJ8nFRaUlj9UgeV53LPCBH7ZUNA": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "QI0nz10cASADO+UxdLX8ILhadtpETgpMQZmN1zU8VVc="
+              "CodeSha256": "ZIheEjApJ21fLa9V2ok5tORGJHXJd2lvYydOIZCKeqE="
             }
           },
           "ApiGatewayRestApi": {
@@ -418,7 +418,7 @@
               "ApiLambdaPermissionApiGateway"
             ]
           },
-          "ApiGatewayDeployment1789778426338": {
+          "ApiGatewayDeployment1790431574513": {
             "Type": "AWS::ApiGateway::Deployment",
             "Properties": {
               "RestApiId": {
@@ -483,7 +483,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersion8tdHMDpKsT1npfasB3Zhp22P7Jg6Wk1yLnftNI7c"
+              "Ref": "ApiLambdaVersion3bdlV93tcx0XerJJJ8nFRaUlj9UgeV53LPCBH7ZUNA"
             },
             "Export": {
               "Name": "sls-powercontrol-proxy-prod-ApiLambdaFunctionQualifiedArn"
@@ -651,7 +651,7 @@
         "timeout": 29,
         "runtime": "nodejs20.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersion8tdHMDpKsT1npfasB3Zhp22P7Jg6Wk1yLnftNI7c"
+        "versionLogicalId": "ApiLambdaVersion3bdlV93tcx0XerJJJ8nFRaUlj9UgeV53LPCBH7ZUNA"
       }
     },
     "configValidationMode": "warn",
@@ -670,7 +670,7 @@
     "artifact": "C:\\Users\\User\\Documents\\Proyectos Node\\Proyecto Manager PowerControl - Piloto\\proxy\\.serverless\\powercontrol-proxy.zip"
   },
   "package": {
-    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1789778432950-2026-09-19T00:40:32.950Z",
+    "artifactDirectoryName": "serverless/powercontrol-proxy/prod/1790431583260-2026-09-26T14:06:23.260Z",
     "artifact": "powercontrol-proxy.zip"
   }
 }
